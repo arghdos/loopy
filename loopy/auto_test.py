@@ -336,10 +336,10 @@ def _enumerate_cl_devices_for_ref_test(blacklist_ref_vendors):
                 continue
 
             if dev.type & cl.device_type.CPU:
-                if "Intel" in dev.platform.vendor:
-                    # Sorry, Intel, your CPU CL has gotten too crashy of late.
-                    # (Feb 2016)
-                    continue
+                #if "Intel" in dev.platform.vendor:
+                #    # Sorry, Intel, your CPU CL has gotten too crashy of late.
+                #    # (Feb 2016)
+                #    continue
 
                 cpu_devs.append(dev)
             else:

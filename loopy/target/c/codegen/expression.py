@@ -191,7 +191,7 @@ class ExpressionToCMapper(RecursiveMapper):
                 lambda expr: evaluate(expr, self.codegen_state.var_subst_map),
                 self.codegen_state.vectorization_info)
 
-        from loopy.kernel.data import ImageArg, GlobalArg, TemporaryVariable
+        from loopy.kernel.data import ImageArg, GlobalArg, TemporaryVariable, ConstantArg
 
         if isinstance(ary, ImageArg):
             extra_axes = 0
@@ -225,7 +225,7 @@ class ExpressionToCMapper(RecursiveMapper):
                 raise NotImplementedError(
                         "non-floating-point images not supported for now")
 
-        elif isinstance(ary, (GlobalArg, TemporaryVariable)):
+        elif isinstance(ary, (GlobalArg, TemporaryVariable, ConstantArg)):
             if len(access_info.subscripts) == 0:
                 if isinstance(ary, GlobalArg):
                     # unsubscripted global args are pointers

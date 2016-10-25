@@ -1455,7 +1455,26 @@ def test_unr_and_conditionals(ctx_factory):
     knl = lp.split_iname(knl, 'k', 2, inner_tag='unr')
 
     lp.auto_test_vs_ref(ref_knl, ctx, knl)
-    
+
+def test_constant_array_args(ctx_factory):
+    ctx = ctx_factory()
+
+    knl = lp.make_kernel('{[k]: 0<=k<n}}',
+         """
+         for k
+             <> Tcond[k] = T[k] < 0.5
+             if Tcond[k]
+                 cp[k] = 2 * T[k] + Tcond[k]
+             end
+         end
+         """,
+         [lp.ConstantArg('T', shape=(200,), dtype=np.float32),
+         '...'])
+
+    knl = lp.fix_parameters(knl, n=200)
+
+    print(lp.generate_code_v2(knl).device_code())
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

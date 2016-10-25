@@ -227,7 +227,8 @@ class ExpressionToCMapper(RecursiveMapper):
 
         elif isinstance(ary, (GlobalArg, TemporaryVariable, ConstantArg)):
             if len(access_info.subscripts) == 0:
-                if isinstance(ary, GlobalArg):
+                if isinstance(ary, GlobalArg) or\
+                    isinstance(ary, ConstantArg):
                     # unsubscripted global args are pointers
                     result = "*" + access_info.array_name
 

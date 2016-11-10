@@ -556,10 +556,6 @@ class CASTBuilder(ASTBuilderBase):
     def get_constant_arg_decl(self, name, shape, dtype, is_written):
         from loopy.target.c import POD  # uses the correct complex type
         from cgen import RestrictPointer, Const
-<<<<<<< HEAD
-        from cgen.opencl import CLConstant
-=======
->>>>>>> master
 
         arg_decl = RestrictPointer(POD(self, dtype, name))
 

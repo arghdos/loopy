@@ -67,6 +67,12 @@ import numpy as np
 # {{{ mappers with support for loopy-specific primitives
 
 class IdentityMapperMixin(object):
+    def map_literal(self, expr, *args):
+        return expr
+
+    def map_array_literal(self, expr, *args):
+        return type(expr)(tuple(self.rec(ch, *args) for ch in expr.children))
+
     def map_group_hw_index(self, expr, *args):
         return expr
 
@@ -114,6 +120,16 @@ class PartialEvaluationMapper(EvaluationMapperBase, IdentityMapperMixin):
 
 
 class WalkMapper(WalkMapperBase):
+    def map_literal(self, expr, *args):
+        self.visit(expr)
+
+    def map_array_literal(self, expr, *args):
+        if not self.visit(expr):
+            return
+
+        for ch in expr.children:
+            self.rec(ch, *args)
+
     def map_group_hw_index(self, expr, *args):
         self.visit(expr)
 
@@ -157,6 +173,12 @@ class ConstantFoldingMapper(ConstantFoldingMapperBase,
 
 
 class StringifyMapper(StringifyMapperBase):
+    def map_literal(self, expr, *args):
+        return expr.s
+
+    def map_array_literal(self, expr, *args):
+        return "{%s}" % ", ".join(self.rec(ch) for ch in expr.children)
+
     def map_group_hw_index(self, expr, enclosing_prec):
         return "grp.%d" % expr.index
 
@@ -280,6 +302,42 @@ class SubstitutionRuleExpander(IdentityMapper):
 
 
 # {{{ loopy-specific primitives
+
+class Literal(Leaf):
+    """A literal to be used during code generation."""
+
+    def __init__(self, s):
+        self.s = s
+
+    def stringifier(self):
+        return StringifyMapper
+
+    def __getinitargs__(self):
+        return (self.s,)
+
+    init_arg_names = ("s",)
+
+    mapper_method = "map_literal"
+
+
+class ArrayLiteral(Leaf):
+    "An array literal."
+
+    # Currently only used after loopy -> C expression translation.
+
+    def __init__(self, children):
+        self.children = children
+
+    def stringifier(self):
+        return StringifyMapper
+
+    def __getinitargs__(self):
+        return (self.children,)
+
+    init_arg_names = ("children",)
+
+    mapper_method = "map_array_literal"
+
 
 class HardwareAxisIndex(Leaf):
     def __init__(self, axis):

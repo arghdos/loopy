@@ -160,13 +160,15 @@ class InstructionBase(Record):
             within_inames = forced_iname_deps
             within_inames_is_final = forced_iname_deps_is_final
 
+        if predicates is None:
+            predicates = frozenset()
+
         new_predicates = set()
         for pred in predicates:
             if isinstance(pred, str):
                 from pymbolic.primitives import LogicalNot
                 from loopy.symbolic import parse
                 if pred.startswith("!"):
-                    from warnings import warn
                     warn("predicates starting with '!' are deprecated. "
                             "Simply use 'not' instead")
                     pred = LogicalNot(parse(pred[1:]))
@@ -207,6 +209,9 @@ class InstructionBase(Record):
 
         if tags is None:
             tags = frozenset()
+
+        if priority is None:
+            priority = 0
 
         if not isinstance(tags, frozenset):
             # was previously allowed to be tuple
@@ -359,7 +364,7 @@ class InstructionBase(Record):
             raise RuntimeError("unexpected value for Instruction.boostable")
 
         if self.depends_on:
-            result.append("deps="+":".join(self.depends_on))
+            result.append("dep="+":".join(self.depends_on))
         if self.no_sync_with:
             result.append("nosync="+":".join(self.no_sync_with))
         if self.groups:
@@ -405,14 +410,12 @@ class InstructionBase(Record):
 
     def copy(self, **kwargs):
         if "insn_deps" in kwargs:
-            from warnings import warn
             warn("insn_deps is deprecated, use depends_on",
                     DeprecationWarning, stacklevel=2)
 
             kwargs["depends_on"] = kwargs.pop("insn_deps")
 
         if "insn_deps_is_final" in kwargs:
-            from warnings import warn
             warn("insn_deps_is_final is deprecated, use depends_on",
                     DeprecationWarning, stacklevel=2)
 
@@ -432,8 +435,6 @@ class InstructionBase(Record):
                 intern_frozenset_of_ids(self.conflicts_with_groups))
         self.within_inames = (
                 intern_frozenset_of_ids(self.within_inames))
-        self.predicates = (
-                intern_frozenset_of_ids(self.predicates))
 
 # }}}
 
@@ -808,6 +809,11 @@ class Assignment(MultiAssignmentBase):
             if field_name in ["assignee", "expression"]:
                 key_builder.update_for_pymbolic_expression(
                         key_hash, getattr(self, field_name))
+            elif field_name == "predicates":
+                preds = sorted(self.predicates, key=str)
+                for pred in preds:
+                    key_builder.update_for_pymbolic_expression(
+                            key_hash, pred)
             else:
                 key_builder.rec(key_hash, getattr(self, field_name))
 
@@ -826,7 +832,6 @@ class Assignment(MultiAssignmentBase):
 
 class ExpressionInstruction(Assignment):
     def __init__(self, *args, **kwargs):
-        from warnings import warn
         warn("ExpressionInstruction is deprecated. Use Assignment instead",
                 DeprecationWarning, stacklevel=2)
 
@@ -944,7 +949,7 @@ class CallInstruction(MultiAssignmentBase):
                 assignees=f(self.assignees, *args),
                 expression=f(self.expression, *args),
                 predicates=frozenset(
-                    f(pred) for pred in self.predicates))
+                    f(pred, *args) for pred in self.predicates))
 
     # }}}
 
@@ -1124,15 +1129,15 @@ class CInstruction(InstructionBase):
 
     def read_dependency_names(self):
         result = (
-                super(MultiAssignmentBase, self).read_dependency_names()
+                super(CInstruction, self).read_dependency_names()
                 | frozenset(self.read_variables))
 
         from loopy.symbolic import get_dependencies
         for name, iname_expr in self.iname_exprs:
-            result.update(get_dependencies(iname_expr))
+            result = result | get_dependencies(iname_expr)
 
         for subscript_deps in self.assignee_subscript_deps():
-            result.update(subscript_deps)
+            result = result | subscript_deps
 
         return frozenset(result) | self.predicates
 
@@ -1280,6 +1285,8 @@ class BarrierInstruction(_DataObliviousInstruction):
 
         ... gbarrier
     """
+
+    fields = _DataObliviousInstruction.fields | set(["kind"])
 
     def __init__(self, id, depends_on=None, depends_on_is_final=None,
             groups=None, conflicts_with_groups=None,

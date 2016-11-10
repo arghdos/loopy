@@ -32,7 +32,7 @@ from loopy.kernel.data import (
         InstructionBase,
         MultiAssignmentBase, Assignment,
         SubstitutionRule)
-from loopy.diagnostic import LoopyError
+from loopy.diagnostic import LoopyError, warn_with_kernel
 import islpy as isl
 from islpy import dim_type
 
@@ -40,7 +40,6 @@ import six
 from six.moves import range, zip, intern
 
 import re
-import sys
 
 import logging
 logger = logging.getLogger(__name__)
@@ -485,7 +484,8 @@ def parse_subst_rule(groups):
 def parse_special_insn(groups, insn_options):
     insn_options = parse_insn_options(
             insn_options.copy(),
-            groups["options"])
+            groups["options"],
+            assignee_names=())
 
     del insn_options["atomicity"]
 
@@ -1191,11 +1191,16 @@ def add_sequential_dependencies(knl):
     new_insns = []
     prev_insn = None
     for insn in knl.instructions:
+        depon = insn.depends_on
+        if depon is None:
+            depon = frozenset()
+
         if prev_insn is not None:
-            depon = insn.depends_on
-            if depon is None:
-                depon = frozenset()
-            insn = insn.copy(depends_on=depon | frozenset((prev_insn.id,)))
+            depon = depon | frozenset((prev_insn.id,))
+
+        insn = insn.copy(
+                depends_on=depon,
+                depends_on_is_final=True)
 
         new_insns.append(insn)
 
@@ -1257,35 +1262,67 @@ def create_temporaries(knl, default_order):
 
 # {{{ determine shapes of temporaries
 
+def find_var_shape(knl, var_name, feed_expression):
+    from loopy.symbolic import AccessRangeMapper, SubstitutionRuleExpander
+    submap = SubstitutionRuleExpander(knl.substitutions)
+
+    armap = AccessRangeMapper(knl, var_name)
+
+    def run_through_armap(expr, inames):
+        armap(submap(expr), inames)
+        return expr
+
+    feed_expression(run_through_armap)
+
+    if armap.access_range is not None:
+        base_indices, shape = list(zip(*[
+                knl.cache_manager.base_index_and_length(
+                    armap.access_range, i)
+                for i in range(armap.access_range.dim(dim_type.set))]))
+    else:
+        if armap.bad_subscripts:
+            raise RuntimeError("cannot determine access range for '%s': "
+                    "undetermined index in subscript(s) '%s'"
+                    % (var_name, ", ".join(
+                            str(i) for i in armap.bad_subscripts)))
+
+        # no subscripts found, let's call it a scalar
+        base_indices = ()
+        shape = ()
+
+    return base_indices, shape
+
+
 def determine_shapes_of_temporaries(knl):
     new_temp_vars = knl.temporary_variables.copy()
 
-    from loopy.symbolic import AccessRangeMapper
     import loopy as lp
+    from loopy.diagnostic import StaticValueFindingError
 
     new_temp_vars = {}
     for tv in six.itervalues(knl.temporary_variables):
         if tv.shape is lp.auto or tv.base_indices is lp.auto:
-            armap = AccessRangeMapper(knl, tv.name)
-            for insn in knl.instructions:
-                for assignee in insn.assignees:
-                    armap(assignee, knl.insn_inames(insn))
+            def feed_all_expressions(receiver):
+                for insn in knl.instructions:
+                    insn.with_transformed_expressions(
+                            lambda expr: receiver(expr, knl.insn_inames(insn)))
 
-            if armap.access_range is not None:
-                base_indices, shape = list(zip(*[
-                        knl.cache_manager.base_index_and_length(
-                            armap.access_range, i)
-                        for i in range(armap.access_range.dim(dim_type.set))]))
-            else:
-                if armap.bad_subscripts:
-                    raise RuntimeError("cannot determine access range for '%s': "
-                            "undetermined index in subscript(s) '%s'"
-                            % (tv.name, ", ".join(
-                                    str(i) for i in armap.bad_subscripts)))
+            def feed_assignee_of_instruction(receiver):
+                for insn in knl.instructions:
+                    for assignee in insn.assignees:
+                        receiver(assignee, knl.insn_inames(insn))
 
-                # no subscripts found, let's call it a scalar
-                base_indices = ()
-                shape = ()
+            try:
+                base_indices, shape = find_var_shape(
+                        knl, tv.name, feed_all_expressions)
+            except StaticValueFindingError as e:
+                warn_with_kernel(knl, "temp_shape_fallback",
+                        "Had to fall back to legacy method of determining "
+                        "shape of temporary '%s' because: %s"
+                        % (tv.name, str(e)))
+
+                base_indices, shape = find_var_shape(
+                        knl, tv.name, feed_assignee_of_instruction)
 
             if tv.base_indices is lp.auto:
                 tv = tv.copy(base_indices=base_indices)
@@ -1294,8 +1331,7 @@ def determine_shapes_of_temporaries(knl):
 
         new_temp_vars[tv.name] = tv
 
-    return knl.copy(
-            temporary_variables=new_temp_vars)
+    return knl.copy(temporary_variables=new_temp_vars)
 
 # }}}
 
@@ -1335,84 +1371,11 @@ def guess_arg_shape_if_requested(kernel, default_order):
 
     import loopy as lp
     from loopy.kernel.array import ArrayBase
-    from loopy.symbolic import SubstitutionRuleExpander, AccessRangeMapper
-
-    submap = SubstitutionRuleExpander(kernel.substitutions)
+    from loopy.kernel.tools import guess_var_shape
 
     for arg in kernel.args:
         if isinstance(arg, ArrayBase) and arg.shape is lp.auto:
-            armap = AccessRangeMapper(kernel, arg.name)
-
-            try:
-                for insn in kernel.instructions:
-                    if isinstance(insn, lp.MultiAssignmentBase):
-                        armap(submap(insn.assignees), kernel.insn_inames(insn))
-                        armap(submap(insn.expression), kernel.insn_inames(insn))
-            except TypeError as e:
-                from traceback import print_exc
-                print_exc()
-
-                raise LoopyError(
-                        "Failed to (automatically, as requested) find "
-                        "shape/strides for argument '%s'. "
-                        "Specifying the shape manually should get rid of this. "
-                        "The following error occurred: %s"
-                        % (arg.name, str(e)))
-
-            if armap.access_range is None:
-                if armap.bad_subscripts:
-                    from loopy.symbolic import LinearSubscript
-                    if any(isinstance(sub, LinearSubscript)
-                            for sub in armap.bad_subscripts):
-                        raise LoopyError("cannot determine access range for '%s': "
-                                "linear subscript(s) in '%s'"
-                                % (arg.name, ", ".join(
-                                        str(i) for i in armap.bad_subscripts)))
-
-                    n_axes_in_subscripts = set(
-                            len(sub.index_tuple) for sub in armap.bad_subscripts)
-
-                    if len(n_axes_in_subscripts) != 1:
-                        raise RuntimeError("subscripts of '%s' with differing "
-                                "numbers of axes were found" % arg.name)
-
-                    n_axes, = n_axes_in_subscripts
-
-                    if n_axes == 1:
-                        # Leave shape undetermined--we can live with that for 1D.
-                        shape = (None,)
-                    else:
-                        raise LoopyError("cannot determine access range for '%s': "
-                                "undetermined index in subscript(s) '%s'"
-                                % (arg.name, ", ".join(
-                                        str(i) for i in armap.bad_subscripts)))
-
-                else:
-                    # no subscripts found, let's call it a scalar
-                    shape = ()
-            else:
-                from loopy.isl_helpers import static_max_of_pw_aff
-                from loopy.symbolic import pw_aff_to_expr
-
-                shape = []
-                for i in range(armap.access_range.dim(dim_type.set)):
-                    try:
-                        shape.append(
-                                pw_aff_to_expr(static_max_of_pw_aff(
-                                    kernel.cache_manager.dim_max(
-                                        armap.access_range, i) + 1,
-                                    constants_only=False)))
-                    except:
-                        print("While trying to find shape axis %d of "
-                                "argument '%s', the following "
-                                "exception occurred:" % (i, arg.name),
-                                file=sys.stderr)
-                        print("*** ADVICE: You may need to manually specify the "
-                                "shape of argument '%s'." % (arg.name),
-                                file=sys.stderr)
-                        raise
-
-                shape = tuple(shape)
+            shape = guess_var_shape(kernel, arg.name)
 
             if arg.shape is lp.auto:
                 arg = arg.copy(shape=shape)
@@ -1522,6 +1485,76 @@ def add_inferred_inames(knl):
     return knl.copy(instructions=[
             insn.copy(within_inames=insn_inames[insn.id])
             for insn in knl.instructions])
+
+# }}}
+
+
+# {{{ apply single-writer heuristic
+
+def apply_single_writer_depencency_heuristic(kernel, warn_if_used=True):
+    logger.debug("%s: default deps" % kernel.name)
+
+    from loopy.transform.subst import expand_subst
+    expanded_kernel = expand_subst(kernel)
+
+    writer_map = kernel.writer_map()
+
+    arg_names = set(arg.name for arg in kernel.args)
+
+    var_names = arg_names | set(six.iterkeys(kernel.temporary_variables))
+
+    dep_map = dict(
+            (insn.id, insn.read_dependency_names() & var_names)
+            for insn in expanded_kernel.instructions)
+
+    new_insns = []
+    for insn in kernel.instructions:
+        if not insn.depends_on_is_final:
+            auto_deps = set()
+
+            # {{{ add automatic dependencies
+
+            all_my_var_writers = set()
+            for var in dep_map[insn.id]:
+                var_writers = writer_map.get(var, set())
+                all_my_var_writers |= var_writers
+
+                if not var_writers and var not in arg_names:
+                    tv = kernel.temporary_variables[var]
+                    if tv.initializer is None:
+                        warn_with_kernel(kernel, "read_no_write(%s)" % var,
+                                "temporary variable '%s' is read, but never written."
+                                % var)
+
+                if len(var_writers) == 1:
+                    auto_deps.update(
+                            var_writers
+                            - set([insn.id]))
+
+            # }}}
+
+            depends_on = insn.depends_on
+            if depends_on is None:
+                depends_on = frozenset()
+
+            new_deps = frozenset(auto_deps) | depends_on
+
+            if warn_if_used and new_deps != depends_on:
+                warn_with_kernel(kernel, "single_writer_after_creation",
+                        "The single-writer dependency heuristic added dependencies "
+                        "on instruction ID(s) '%s' to instruction ID '%s' after "
+                        "kernel creation is complete. This is deprecated and "
+                        "may stop working in the future. "
+                        "To fix this, ensure that instruction dependencies "
+                        "are added/resolved as soon as possible, ideally at kernel "
+                        "creation time."
+                        % (", ".join(new_deps - depends_on), insn.id))
+
+            insn = insn.copy(depends_on=new_deps)
+
+        new_insns.append(insn)
+
+    return kernel.copy(instructions=new_insns)
 
 # }}}
 
@@ -1753,6 +1786,7 @@ def make_kernel(domains, instructions, kernel_data=["..."], **kwargs):
     knl = guess_arg_shape_if_requested(knl, default_order)
     knl = apply_default_order_to_args(knl, default_order)
     knl = resolve_wildcard_deps(knl)
+    knl = apply_single_writer_depencency_heuristic(knl, warn_if_used=False)
 
     # -------------------------------------------------------------------------
     # Ordering dependency:

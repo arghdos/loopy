@@ -325,7 +325,8 @@ class TemporaryVariable(ArrayBase):
     .. attribute:: base_storage
 
         The name of a storage array that is to be used to actually
-        hold the data in this temporary.
+        hold the data in this temporary. Note that this storage
+        array must not match any existing variable names.
 
     .. attribute:: scope
 
@@ -357,7 +358,7 @@ class TemporaryVariable(ArrayBase):
     def __init__(self, name, dtype=None, shape=(), scope=auto,
             dim_tags=None, offset=0, dim_names=None, strides=None, order=None,
             base_indices=None, storage_shape=None,
-            base_storage=None, initializer=None, read_only=False):
+            base_storage=None, initializer=None, read_only=False, **kwargs):
         """
         :arg dtype: :class:`loopy.auto` or a :class:`numpy.dtype`
         :arg shape: :class:`loopy.auto` or a shape tuple
@@ -392,6 +393,9 @@ class TemporaryVariable(ArrayBase):
                     "initializer must be None or a numpy array"
                     % name)
 
+        if order is None:
+            order = "C"
+
         if base_indices is None:
             base_indices = (0,) * len(shape)
 
@@ -415,12 +419,13 @@ class TemporaryVariable(ArrayBase):
         ArrayBase.__init__(self, name=intern(name),
                 dtype=dtype, shape=shape,
                 dim_tags=dim_tags, offset=offset, dim_names=dim_names,
-                order="C",
+                order=order,
                 base_indices=base_indices, scope=scope,
                 storage_shape=storage_shape,
                 base_storage=base_storage,
                 initializer=initializer,
-                read_only=read_only)
+                read_only=read_only,
+                **kwargs)
 
     @property
     def is_local(self):

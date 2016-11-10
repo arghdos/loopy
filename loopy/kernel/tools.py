@@ -1,6 +1,7 @@
+# coding=utf-8
 """Operations on the kernel object."""
 
-from __future__ import division, absolute_import
+from __future__ import division, absolute_import, print_function
 
 __copyright__ = "Copyright (C) 2012 Andreas Kloeckner"
 
@@ -23,6 +24,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
+
+import sys
 
 import six
 from six.moves import intern
@@ -320,7 +323,13 @@ class SetOperationCacheManager:
         from loopy.isl_helpers import dim_max_with_elimination
         return self.op(set, "dim_max", dim_max_with_elimination, args)
 
-    def base_index_and_length(self, set, iname, context=None):
+    def base_index_and_length(self, set, iname, context=None,
+            n_allowed_params_in_length=None):
+        """
+        :arg n_allowed_params_in_length: Simplifies the 'length'
+            argument so that only the first that many params
+            (in the domain of *set*) occur.
+        """
         if not isinstance(iname, int):
             iname_to_dim = set.space.get_var_dict()
             idx = iname_to_dim[iname][1]
@@ -334,7 +343,8 @@ class SetOperationCacheManager:
         from loopy.isl_helpers import (
                 static_max_of_pw_aff,
                 static_min_of_pw_aff,
-                static_value_of_pw_aff)
+                static_value_of_pw_aff,
+                find_max_of_pwaff_with_params)
         from loopy.symbolic import pw_aff_to_expr
 
         # {{{ first: try to find static lower bound value
@@ -349,11 +359,14 @@ class SetOperationCacheManager:
         if base_index_aff is not None:
             base_index = pw_aff_to_expr(base_index_aff)
 
-            size = pw_aff_to_expr(static_max_of_pw_aff(
-                    upper_bound_pw_aff - base_index_aff + 1, constants_only=False,
+            length = find_max_of_pwaff_with_params(
+                    upper_bound_pw_aff - base_index_aff + 1,
+                    n_allowed_params_in_length)
+            length = pw_aff_to_expr(static_max_of_pw_aff(
+                    length, constants_only=False,
                     context=context))
 
-            return base_index, size
+            return base_index, length
 
         # }}}
 
@@ -365,11 +378,14 @@ class SetOperationCacheManager:
 
         base_index = pw_aff_to_expr(base_index_aff)
 
-        size = pw_aff_to_expr(static_max_of_pw_aff(
-                upper_bound_pw_aff - base_index_aff + 1, constants_only=False,
+        length = find_max_of_pwaff_with_params(
+                upper_bound_pw_aff - base_index_aff + 1,
+                n_allowed_params_in_length)
+        length = pw_aff_to_expr(static_max_of_pw_aff(
+                length, constants_only=False,
                 context=context))
 
-        return base_index, size
+        return base_index, length
 
         # }}}
 
@@ -436,8 +452,8 @@ def get_dot_dependency_graph(kernel, iname_cluster=True, use_insn_id=False):
     """
 
     # make sure all automatically added stuff shows up
-    from loopy.preprocess import add_default_dependencies
-    kernel = add_default_dependencies(kernel)
+    from loopy.kernel.creation import apply_single_writer_depencency_heuristic
+    kernel = apply_single_writer_depencency_heuristic(kernel, warn_if_used=False)
 
     if iname_cluster and not kernel.schedule:
         try:
@@ -994,5 +1010,226 @@ class ArrayChanger(object):
 
 # }}}
 
+
+# {{{ guess_var_shape
+
+def guess_var_shape(kernel, var_name):
+    from loopy.symbolic import SubstitutionRuleExpander, AccessRangeMapper
+
+    armap = AccessRangeMapper(kernel, var_name)
+
+    submap = SubstitutionRuleExpander(kernel.substitutions)
+
+    def run_through_armap(expr):
+        armap(submap(expr), kernel.insn_inames(insn))
+        return expr
+
+    try:
+        for insn in kernel.instructions:
+            insn.with_transformed_expressions(run_through_armap)
+    except TypeError as e:
+        from traceback import print_exc
+        print_exc()
+
+        raise LoopyError(
+                "Failed to (automatically, as requested) find "
+                "shape/strides for variable '%s'. "
+                "Specifying the shape manually should get rid of this. "
+                "The following error occurred: %s"
+                % (var_name, str(e)))
+
+    if armap.access_range is None:
+        if armap.bad_subscripts:
+            from loopy.symbolic import LinearSubscript
+            if any(isinstance(sub, LinearSubscript)
+                    for sub in armap.bad_subscripts):
+                raise LoopyError("cannot determine access range for '%s': "
+                        "linear subscript(s) in '%s'"
+                        % (var_name, ", ".join(
+                                str(i) for i in armap.bad_subscripts)))
+
+            n_axes_in_subscripts = set(
+                    len(sub.index_tuple) for sub in armap.bad_subscripts)
+
+            if len(n_axes_in_subscripts) != 1:
+                raise RuntimeError("subscripts of '%s' with differing "
+                        "numbers of axes were found" % var_name)
+
+            n_axes, = n_axes_in_subscripts
+
+            if n_axes == 1:
+                # Leave shape undetermined--we can live with that for 1D.
+                shape = (None,)
+            else:
+                raise LoopyError("cannot determine access range for '%s': "
+                        "undetermined index in subscript(s) '%s'"
+                        % (var_name, ", ".join(
+                                str(i) for i in armap.bad_subscripts)))
+
+        else:
+            # no subscripts found, let's call it a scalar
+            shape = ()
+    else:
+        from loopy.isl_helpers import static_max_of_pw_aff
+        from loopy.symbolic import pw_aff_to_expr
+
+        shape = []
+        for i in range(armap.access_range.dim(dim_type.set)):
+            try:
+                shape.append(
+                        pw_aff_to_expr(static_max_of_pw_aff(
+                            kernel.cache_manager.dim_max(
+                                armap.access_range, i) + 1,
+                            constants_only=False)))
+            except:
+                print("While trying to find shape axis %d of "
+                        "variable '%s', the following "
+                        "exception occurred:" % (i, var_name),
+                        file=sys.stderr)
+                print("*** ADVICE: You may need to manually specify the "
+                        "shape of argument '%s'." % (var_name),
+                        file=sys.stderr)
+                raise
+
+        shape = tuple(shape)
+
+    return shape
+
+# }}}
+
+
+# {{{ find_recursive_dependencies
+
+def find_recursive_dependencies(kernel, insn_ids):
+    queue = list(insn_ids)
+
+    result = set(insn_ids)
+
+    while queue:
+        new_queue = []
+
+        for insn_id in queue:
+            insn = kernel.id_to_insn[insn_id]
+            additionals = insn.depends_on - result
+            result.update(additionals)
+            new_queue.extend(additionals)
+
+        queue = new_queue
+
+    return result
+
+# }}}
+
+
+# {{{ find_reverse_dependencies
+
+def find_reverse_dependencies(kernel, insn_ids):
+    """Finds a set of IDs of instructions that depend on one of the insn_ids.
+
+    :arg insn_ids: a set of instruction IDs
+    """
+    return frozenset(
+            insn.id
+            for insn in kernel.instructions
+            if insn.depends_on & insn_ids)
+
+# }}}
+
+
+# {{{ draw_dependencies_as_unicode_arrows
+
+def draw_dependencies_as_unicode_arrows(
+        instructions, fore, style, flag_downward=True):
+    """
+    :arg instructions: an ordered iterable of :class:`loopy.InstructionBase`
+        instances
+    :arg fore: if given, will be used like a :mod:`colorama` ``Fore`` object
+        to color-code dependencies. (E.g. red for downward edges)
+    :returns: A list of tuples (arrows, extender) with Unicode-drawn dependency
+        arrows, one per entry of *instructions*. *extender* can be used to
+        extend arrows below the line of an instruction.
+    """
+    reverse_deps = {}
+
+    for insn in instructions:
+        for dep in insn.depends_on:
+            reverse_deps.setdefault(dep, []).append(insn.id)
+
+    # mapping of (from_id, to_id) tuples to column_index
+    dep_to_column = {}
+
+    # {{{ find column assignments
+
+    # mapping from column indices to (end_insn_id, updown)
+    columns_in_use = {}
+
+    n_columns = [0]
+
+    def find_free_column():
+        i = 0
+        while i in columns_in_use:
+            i += 1
+        if i+1 > n_columns[0]:
+            n_columns[0] = i+1
+            row.append(" ")
+        return i
+
+    def do_flag_downward(s, updown):
+        if flag_downward and updown == "down":
+            return fore.RED+s+style.RESET_ALL
+        else:
+            return s
+
+    def make_extender():
+        result = n_columns[0] * [" "]
+        for col, (_, updown) in six.iteritems(columns_in_use):
+            result[col] = do_flag_downward("│", updown)
+
+        return result
+
+    rows = []
+    for insn in instructions:
+        row = make_extender()
+
+        for rdep in reverse_deps.get(insn.id, []):
+            assert rdep != insn.id
+
+            dep_key = (rdep, insn.id)
+            if dep_key not in dep_to_column:
+                col = dep_to_column[dep_key] = find_free_column()
+                columns_in_use[col] = (rdep, "up")
+                row[col] = "↱"
+
+        for dep in insn.depends_on:
+            assert dep != insn.id
+            dep_key = (insn.id, dep)
+            if dep_key not in dep_to_column:
+                col = dep_to_column[dep_key] = find_free_column()
+                columns_in_use[col] = (dep, "down")
+                row[col] = do_flag_downward("┌", "down")
+
+        for col, (end, updown) in list(six.iteritems(columns_in_use)):
+            if insn.id == end:
+                del columns_in_use[col]
+                if updown == "up":
+                    row[col] = "└"
+                else:
+                    row[col] = do_flag_downward("↳", updown)
+
+        extender = make_extender()
+
+        rows.append(("".join(row), "".join(extender)))
+
+    # }}}
+
+    def extend_to_uniform_length(s):
+        return s + " "*(n_columns[0]-len(s))
+
+    return [
+            (extend_to_uniform_length(row),
+                extend_to_uniform_length(extender))
+            for row, extender in rows]
+
+# }}}
 
 # vim: foldmethod=marker

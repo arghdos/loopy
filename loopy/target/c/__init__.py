@@ -259,6 +259,9 @@ class CTarget(TargetBase):
     def get_device_ast_builder(self):
         return CASTBuilder(self)
 
+    def get_device_decl_extractor(self):
+        return CFunctionDeclExtractor()
+
     # {{{ types
 
     @memoize_method
@@ -755,5 +758,12 @@ class CASTBuilder(ASTBuilderBase):
         sc(node)
         return node
 
+class CFunctionDeclExtractor(CASTIdentityMapper):
+    def __init__(self):
+        self.decls = []
+
+    def map_function_declaration(self, node):
+        self.decls.append(node)
+        return super(self.__class__, self).map_function_declaration(node)
 
 # vim: foldmethod=marker

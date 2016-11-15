@@ -550,23 +550,21 @@ def generate_body(kernel):
 
 # }}}
 
-from loopy.target.c import CASTIdentityMapper
-class FunctionDeclExtractor(CASTIdentityMapper):
-    def __init__(self):
-        self.decls = []
-
-    def map_function_declaration(self, node):
-        self.decls.append(node)
-        return super(self.__class__, self).map_function_declaration(node)
-
 def generate_header(kernel):
+    try:
+        fde = kernel.target.get_device_decl_extractor()
+    except NotImplementedError:
+        from warnings import warn
+        warn('Header generation for non C-based languages are not implemented',
+                RuntimeWarning, stacklevel=2)
+        return None
+
     codegen_result = generate_code_v2(kernel)
 
-    if len(codegen_result.device_programs) != 1:
-        raise LoopyError("generate_header cannot be used on programs "
-                "that yield more than one device program")
+    headers = []
+    for dev_prg in codegen_result.device_programs:
+        headers.append(str(fde(dev_prg.decl_ast)))
 
-    dev_prg, = codegen_result.device_programs
+    return '\n'.join(headers)
 
-    fde = FunctionDeclExtractor()
-    return str(fde(dev_prg.decl_ast))
+# vim: foldmethod=marker

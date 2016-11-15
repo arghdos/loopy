@@ -1586,6 +1586,47 @@ def test_temp_initializer(ctx_factory, src_order, tmp_order):
 
     assert np.array_equal(a, a2)
 
+def test_header_extract(ctx_factory):
+    ctx = ctx_factory()
+
+    knl = lp.make_kernel('{[k]: 0<=k<n}}',
+         """
+         for k
+             T[k] = k**2
+         end
+         """,
+         [lp.GlobalArg('T', shape=(200,), dtype=np.float32),
+         '...'])
+
+    knl = lp.fix_parameters(knl, n=200)
+
+    #test C
+    cknl = knl
+    cknl.target = lp.CTarget()
+    assert lp.generate_header(cknl) == 'void loopy_kernel(float *restrict T);'
+
+    #test CUDA
+    cuknl = knl
+    cuknl.target = lp.CudaTarget()
+    assert lp.generate_header(cuknl) == 'extern "C" __global__ void __launch_bounds__(1) loopy_kernel(float *__restrict__ T);'
+
+    #test OpenCL
+    oclknl = knl
+    oclknl.target = lp.PyOpenCLTarget()
+    assert lp.generate_header(oclknl) == '__kernel void __attribute__ ((reqd_work_group_size(1, 1, 1))) loopy_kernel(__global float *restrict T);'
+
+def test_base_storage_decl():
+    knl = lp.make_kernel(
+        "{ [i]: 0<=i<n}",
+        "a[i] = 1",
+        [
+            lp.TemporaryVariable(
+                "a", dtype=np.float64, shape=("n",), base_storage="base"),
+            lp.ValueArg("n")],
+        target=lp.CTarget())
+
+    lp.generate_code_v2(knl)
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

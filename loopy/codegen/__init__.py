@@ -409,7 +409,7 @@ def generate_code_v2(kernel):
 
     # }}}
 
-    from loopy.preprocess import infer_unknown_types
+    from loopy.type_inference import infer_unknown_types
     kernel = infer_unknown_types(kernel, expect_completion=True)
 
     from loopy.check import pre_codegen_checks
@@ -550,4 +550,23 @@ def generate_body(kernel):
 
 # }}}
 
-# vim: foldmethod=marker
+from loopy.target.c import CASTIdentityMapper
+class FunctionDeclExtractor(CASTIdentityMapper):
+    def __init__(self):
+        self.decls = []
+
+    def map_function_declaration(self, node):
+        self.decls.append(node)
+        return super(self.__class__, self).map_function_declaration(node)
+
+def generate_header(kernel):
+    codegen_result = generate_code_v2(kernel)
+
+    if len(codegen_result.device_programs) != 1:
+        raise LoopyError("generate_header cannot be used on programs "
+                "that yield more than one device program")
+
+    dev_prg, = codegen_result.device_programs
+
+    fde = FunctionDeclExtractor()
+    return str(fde(dev_prg.decl_ast))

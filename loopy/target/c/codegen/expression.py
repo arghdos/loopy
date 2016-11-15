@@ -36,7 +36,8 @@ import pymbolic.primitives as p
 from pymbolic import var
 
 
-from loopy.expression import dtype_to_type_context, TypeInferenceMapper
+from loopy.expression import dtype_to_type_context
+from loopy.type_inference import TypeInferenceMapper
 
 from loopy.diagnostic import LoopyError, LoopyWarning
 from loopy.tools import is_integer
@@ -104,7 +105,10 @@ class ExpressionToCExpressionMapper(IdentityMapper):
                 self.infer_type(expr), needed_dtype,
                 RecursiveMapper.rec(self, expr, type_context))
 
-    def __call__(self, expr, prec, type_context=None, needed_dtype=None):
+    def __call__(self, expr, prec=None, type_context=None, needed_dtype=None):
+        if prec is None:
+            prec = PREC_NONE
+
         assert prec == PREC_NONE
         from loopy.target.c import CExpression
         return CExpression(

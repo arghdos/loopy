@@ -1586,9 +1586,8 @@ def test_temp_initializer(ctx_factory, src_order, tmp_order):
 
     assert np.array_equal(a, a2)
 
-def test_header_extract(ctx_factory):
-    ctx = ctx_factory()
 
+def test_header_extract():
     knl = lp.make_kernel('{[k]: 0<=k<n}}',
          """
          for k
@@ -1601,31 +1600,85 @@ def test_header_extract(ctx_factory):
     knl = lp.fix_parameters(knl, n=200)
 
     #test C
-    cknl = knl
-    cknl.target = lp.CTarget()
-    assert lp.generate_header(cknl) == 'void loopy_kernel(float *restrict T);'
+    cknl = knl.copy(target=lp.CTarget())
+    assert str(lp.generate_header(cknl)[0]) == (
+            'void loopy_kernel(float *__restrict__ T);')
 
     #test CUDA
-    cuknl = knl
-    cuknl.target = lp.CudaTarget()
-    assert lp.generate_header(cuknl) == 'extern "C" __global__ void __launch_bounds__(1) loopy_kernel(float *__restrict__ T);'
+    cuknl = knl.copy(target=lp.CudaTarget())
+    assert str(lp.generate_header(cuknl)[0]) == (
+            'extern "C" __global__ void __launch_bounds__(1) '
+            'loopy_kernel(float *__restrict__ T);')
 
     #test OpenCL
-    oclknl = knl
-    oclknl.target = lp.PyOpenCLTarget()
-    assert lp.generate_header(oclknl) == '__kernel void __attribute__ ((reqd_work_group_size(1, 1, 1))) loopy_kernel(__global float *restrict T);'
+    oclknl = knl.copy(target=lp.PyOpenCLTarget())
+    assert str(lp.generate_header(oclknl)[0]) == (
+            '__kernel void __attribute__ ((reqd_work_group_size(1, 1, 1))) '
+            'loopy_kernel(__global float *__restrict__ T);')
 
-def test_base_storage_decl():
+
+def test_scalars_with_base_storage(ctx_factory):
+    """ Regression test for !50 """
+    ctx = ctx_factory()
+    queue = cl.CommandQueue(ctx)
+
     knl = lp.make_kernel(
-        "{ [i]: 0<=i<n}",
-        "a[i] = 1",
-        [
-            lp.TemporaryVariable(
-                "a", dtype=np.float64, shape=("n",), base_storage="base"),
-            lp.ValueArg("n")],
-        target=lp.CTarget())
+            "{ [i]: 0<=i<1}",
+            "a = 1",
+            [lp.TemporaryVariable("a", dtype=np.float64,
+                                  shape=(), base_storage="base")])
 
-    lp.generate_code_v2(knl)
+    knl(queue, out_host=True)
+
+
+def test_tight_loop_bounds(ctx_factory):
+    ctx = ctx_factory()
+    queue = cl.CommandQueue(ctx)
+
+    knl = lp.make_kernel(
+        ["{ [i] : 0 <= i <= 5 }",
+         "[i] -> { [j] : 2 * i - 2 < j <= 2 * i and 0 <= j <= 9 }"],
+        """
+        for i
+          for j
+            out[j] = j
+          end
+        end
+        """,
+        silenced_warnings="write_race(insn)")
+
+    knl = lp.split_iname(knl, "i", 5, inner_tag="l.0", outer_tag="g.0")
+
+    evt, (out,) = knl(queue, out_host=True)
+
+    assert (out == np.arange(10)).all()
+
+
+def test_tight_loop_bounds_codegen():
+    knl = lp.make_kernel(
+        ["{ [i] : 0 <= i <= 5 }",
+         "[i] -> { [j] : 2 * i - 2 <= j <= 2 * i and 0 <= j <= 9 }"],
+        """
+        for i
+          for j
+            out[j] = j
+          end
+        end
+        """,
+        silenced_warnings="write_race(insn)",
+        target=lp.OpenCLTarget())
+
+    knl = lp.split_iname(knl, "i", 5, inner_tag="l.0", outer_tag="g.0")
+
+    cgr = lp.generate_code_v2(knl)
+    #print(cgr.device_code())
+
+    for_loop = \
+        "for (int j = " \
+        "(lid(0) == 0 && gid(0) == 0 ? 0 : -2 + 10 * gid(0) + 2 * lid(0)); " \
+        "j <= (lid(0) == 0 && -1 + gid(0) == 0 ? 9 : 2 * lid(0)); ++j)"
+
+    assert for_loop in cgr.device_code()
 
 
 if __name__ == "__main__":

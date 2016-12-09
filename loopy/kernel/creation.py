@@ -211,10 +211,15 @@ def parse_insn_options(opt_dict, options_str, assignee_names=None):
             for value in opt_value.split(":"):
                 arrow_idx = value.find("->")
                 if arrow_idx >= 0:
-                    result.setdefault("inames_to_dup", []).append(
-                            (value[:arrow_idx], value[arrow_idx+2:]))
+                    result["inames_to_dup"] = (
+                            result.get("inames_to_dup", [])
+                            +
+                            [(value[:arrow_idx], value[arrow_idx+2:])])
                 else:
-                    result.setdefault("inames_to_dup", []).append((value, None))
+                    result["inames_to_dup"] = (
+                            result.get("inames_to_dup", [])
+                            +
+                            [(value, None)])
 
         elif opt_key == "dep" and opt_value is not None:
             if opt_value.startswith("*"):
@@ -235,9 +240,11 @@ def parse_insn_options(opt_dict, options_str, assignee_names=None):
                 raise LoopyError("'nosync' option may not be specified "
                         "in a 'with' block")
 
+            # TODO: Come up with a syntax that allows the user to express
+            # different synchronization scopes.
             result["no_sync_with"] = result["no_sync_with"].union(frozenset(
-                    intern(dep.strip()) for dep in opt_value.split(":")
-                    if dep.strip()))
+                    (intern(dep.strip()), "any")
+                    for dep in opt_value.split(":") if dep.strip()))
 
         elif opt_key == "nosync_query" and opt_value is not None:
             if is_with_block:
@@ -246,8 +253,10 @@ def parse_insn_options(opt_dict, options_str, assignee_names=None):
 
             from loopy.match import parse_match
             match = parse_match(opt_value)
+            # TODO: Come up with a syntax that allows the user to express
+            # different synchronization scopes.
             result["no_sync_with"] = result["no_sync_with"].union(
-                    frozenset([match]))
+                    frozenset([(match, "any")]))
 
         elif opt_key == "groups" and opt_value is not None:
             result["groups"] = frozenset(
@@ -270,7 +279,26 @@ def parse_insn_options(opt_dict, options_str, assignee_names=None):
                     opt_value.split(":"))
 
         elif opt_key == "if" and opt_value is not None:
-            result["predicates"] = intern_frozenset_of_ids(opt_value.split(":"))
+            predicates = opt_value.split(":")
+            new_predicates = set()
+
+            for pred in predicates:
+                from pymbolic.primitives import LogicalNot
+                from loopy.symbolic import parse
+                if pred.startswith("!"):
+                    from warnings import warn
+                    warn("predicates starting with '!' are deprecated. "
+                            "Simply use 'not' instead")
+                    pred = LogicalNot(parse(pred[1:]))
+                else:
+                    pred = parse(pred)
+
+                new_predicates.add(pred)
+
+            result["predicates"] = frozenset(new_predicates)
+
+            del predicates
+            del new_predicates
 
         elif opt_key == "tags" and opt_value is not None:
             result["tags"] = frozenset(
@@ -330,8 +358,16 @@ FOR_RE = re.compile(
 IF_RE = re.compile(
         "^"
         "\s*if\s+"
-        "(?P<predicate>(?:not\s+)?\w+(?:\[[ ,\w\d]+\])?)"
+        "(?P<predicate>.+)"
         "\s*$")
+
+ELIF_RE = re.compile(
+        "^"
+        "\s*elif\s+"
+        "(?P<predicate>.+)"
+        "\s*$")
+
+ELSE_RE = re.compile("^\s*else\s*$")
 
 INSN_RE = re.compile(
         "^"
@@ -579,7 +615,8 @@ def parse_instructions(instructions, defines):
             new_instructions.append(
                     insn.copy(
                         id=intern(insn.id) if isinstance(insn.id, str) else insn.id,
-                        depends_on=frozenset(intern_if_str(dep) for dep in insn.depends_on),
+                        depends_on=frozenset(intern_if_str(dep)
+                            for dep in insn.depends_on),
                         groups=frozenset(intern(grp) for grp in insn.groups),
                         conflicts_with_groups=frozenset(
                             intern(grp) for grp in insn.conflicts_with_groups),
@@ -663,6 +700,9 @@ def parse_instructions(instructions, defines):
     # {{{ pass 4: parsing
 
     insn_options_stack = [get_default_insn_options_dict()]
+    if_predicates_stack = [
+            {'predicates': frozenset(),
+                'insn_predicates': frozenset()}]
 
     for insn in instructions:
         if isinstance(insn, InstructionBase):
@@ -751,16 +791,84 @@ def parse_instructions(instructions, defines):
             if not predicate:
                 raise LoopyError("'if' without predicate encountered")
 
+            from loopy.symbolic import parse
+            predicate = parse(predicate)
+
             options["predicates"] = (
                     options.get("predicates", frozenset())
                     | frozenset([predicate]))
 
             insn_options_stack.append(options)
+
+            #add to the if_stack
+            if_options = options.copy()
+            if_options['insn_predicates'] = options["predicates"]
+            if_predicates_stack.append(if_options)
             del options
+            del predicate
+            continue
+
+        elif_match = ELIF_RE.match(insn)
+        else_match = ELSE_RE.match(insn)
+        if elif_match is not None or else_match is not None:
+            prev_predicates = insn_options_stack[-1].get(
+                    "predicates", frozenset())
+            last_if_predicates = if_predicates_stack[-1].get(
+                    "predicates", frozenset())
+            insn_options_stack.pop()
+            if_predicates_stack.pop()
+
+            outer_predicates = insn_options_stack[-1].get(
+                    "predicates", frozenset())
+            last_if_predicates = last_if_predicates - outer_predicates
+
+            if elif_match is not None:
+                predicate = elif_match.group("predicate")
+                if not predicate:
+                    raise LoopyError("'elif' without predicate encountered")
+                from loopy.symbolic import parse
+                predicate = parse(predicate)
+
+                additional_preds = frozenset([predicate])
+                del predicate
+
+            else:
+                assert else_match is not None
+                if not last_if_predicates:
+                    raise LoopyError("'else' without 'if'/'elif' encountered")
+                additional_preds = frozenset()
+
+            options = insn_options_stack[-1].copy()
+            if_options = insn_options_stack[-1].copy()
+
+            from pymbolic.primitives import LogicalNot
+            options["predicates"] = (
+                    options.get("predicates", frozenset())
+                    | outer_predicates
+                    | prev_predicates - last_if_predicates
+                    | frozenset(
+                        LogicalNot(pred) for pred in last_if_predicates)
+                    | additional_preds
+                    )
+            if_options["predicates"] = additional_preds
+            #hold on to this for comparison / stack popping later
+            if_options["insn_predicates"] = options["predicates"]
+
+            insn_options_stack.append(options)
+            if_predicates_stack.append(if_options)
+
+            del options
+            del additional_preds
+            del last_if_predicates
+
             continue
 
         if insn == "end":
-            insn_options_stack.pop()
+            obj = insn_options_stack.pop()
+            #if this object is the end of an if statement
+            if obj['predicates'] == if_predicates_stack[-1]["insn_predicates"] and\
+                    if_predicates_stack[-1]["insn_predicates"]:
+                if_predicates_stack.pop()
             continue
 
         insn_match = SPECIAL_INSN_RE.match(insn)
@@ -1462,8 +1570,11 @@ def resolve_dependencies(knl):
     for insn in knl.instructions:
         new_insns.append(insn.copy(
                     depends_on=_resolve_dependencies(knl, insn, insn.depends_on),
-                    no_sync_with=_resolve_dependencies(
-                        knl, insn, insn.no_sync_with),
+                    no_sync_with=frozenset(
+                        (resolved_insn_id, nosync_scope)
+                        for nosync_dep, nosync_scope in insn.no_sync_with
+                        for resolved_insn_id in
+                        _resolve_dependencies(knl, insn, nosync_dep)),
                     ))
 
     return knl.copy(instructions=new_insns)
@@ -1659,6 +1770,9 @@ def make_kernel(domains, instructions, kernel_data=["..."], **kwargs):
         *seq_dependencies* added.
     """
 
+    logger.info(
+            "%s: kernel creation start" % kwargs.get("name", "(unnamed)"))
+
     defines = kwargs.pop("defines", {})
     default_order = kwargs.pop("default_order", "C")
     default_offset = kwargs.pop("default_offset", 0)
@@ -1798,6 +1912,7 @@ def make_kernel(domains, instructions, kernel_data=["..."], **kwargs):
     # Must infer inames before determining shapes.
     # -------------------------------------------------------------------------
     knl = determine_shapes_of_temporaries(knl)
+
     knl = expand_defines_in_shapes(knl, defines)
     knl = guess_arg_shape_if_requested(knl, default_order)
     knl = apply_default_order_to_args(knl, default_order)
@@ -1817,6 +1932,9 @@ def make_kernel(domains, instructions, kernel_data=["..."], **kwargs):
 
     from loopy.preprocess import prepare_for_caching
     knl = prepare_for_caching(knl)
+
+    logger.info(
+            "%s: kernel creation done" % knl.name)
 
     return knl
 

@@ -1933,17 +1933,20 @@ def test_unscheduled_insn_detection():
         lp.generate_code(knl)
 
 
-def test_integer_reduction():
+def test_integer_reduction(ctx_factory):
     ctx = ctx_factory()
     queue = cl.CommandQueue(ctx)
+
+    from loopy.kernel.data import temp_var_scope as scopes
+    from loopy.types import to_loopy_type
 
     n = 200
     for vtype in [np.int32, np.int64]:
         var_int = np.random.randint(1000, size=n, dtype=vtype)
         var_lp = lp.TemporaryVariable('var', initializer=var_int,
-                                   scope=scopes.PRIVATE,
                                    read_only=True,
-                                   dtype=vtype,
+                                   scope=scopes.PRIVATE,
+                                   dtype=to_loopy_type(vtype),
                                    shape=lp.auto)
 
         reductions = [('max', lambda x: x == np.max(var_int)),
@@ -1956,7 +1959,7 @@ def test_integer_reduction():
                         x[1] == np.argmin(var_int)))]
 
         for reduction, function in reductions:
-            kstr = (("out" if not 'arg' in reduction
+            kstr = (("out" if 'arg' not in reduction
                 else "out[0], out[1]") + ' = {}(k, var[k])'.format(reduction))
             knl = lp.make_kernel('{[k]: 0<=k<n}}',
                                 kstr,
@@ -1967,6 +1970,7 @@ def test_integer_reduction():
             _, (out,) = knl(queue)
 
             assert function(out)
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

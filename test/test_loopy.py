@@ -102,6 +102,28 @@ def test_type_inference_no_artificial_doubles(ctx_factory):
         assert "double" not in code
 
 
+def test_type_inference_with_type_dependencies():
+    knl = lp.make_kernel(
+            "{[i]: i=0}",
+            """
+            <>a = 99
+            a = a + 1
+            <>b = 0
+            <>c = 1
+            b = b + c + 1.0
+            c = b + c
+            <>d = b + 2 + 1j
+            """,
+            "...")
+    knl = lp.infer_unknown_types(knl)
+
+    from loopy.types import to_loopy_type
+    assert knl.temporary_variables["a"].dtype == to_loopy_type(np.int32)
+    assert knl.temporary_variables["b"].dtype == to_loopy_type(np.float32)
+    assert knl.temporary_variables["c"].dtype == to_loopy_type(np.float32)
+    assert knl.temporary_variables["d"].dtype == to_loopy_type(np.complex128)
+
+
 def test_sized_and_complex_literals(ctx_factory):
     ctx = ctx_factory()
 
@@ -1316,6 +1338,39 @@ def test_save_local_multidim_array(ctx_factory, debug=False):
     save_and_reload_temporaries_test(queue, knl, 1, debug)
 
 
+def test_missing_temporary_definition_detection():
+    knl = lp.make_kernel(
+            "{ [i]: 0<=i<10 }",
+            """
+            for i
+                <> t = 1
+                ... gbarrier
+                out[i] = t
+            end
+            """, seq_dependencies=True)
+
+    from loopy.diagnostic import MissingDefinitionError
+    with pytest.raises(MissingDefinitionError):
+        lp.generate_code_v2(knl)
+
+
+def test_missing_definition_check_respects_aliases():
+    # Based on https://github.com/inducer/loopy/issues/69
+    knl = lp.make_kernel("{ [i] : 0<=i<n }",
+         ["a[i] = 0",
+          "c[i] = b[i]"],
+         temporary_variables={
+             "a": lp.TemporaryVariable("a",
+                        dtype=np.float64, shape=("n",), base_storage="base"),
+             "b": lp.TemporaryVariable("b",
+                        dtype=np.float64, shape=("n",), base_storage="base")
+         },
+         target=lp.CTarget(),
+         silenced_warnings=frozenset(["read_no_write(b)"]))
+
+    lp.generate_code_v2(knl)
+
+
 def test_global_temporary(ctx_factory):
     ctx = ctx_factory()
 
@@ -1635,28 +1690,6 @@ def test_ilp_and_conditionals(ctx_factory):
 
     lp.auto_test_vs_ref(ref_knl, ctx, knl)
 
-def test_unr_and_conditionals(ctx_factory):
-    ctx = ctx_factory()
-
-    knl = lp.make_kernel('{[k]: 0<=k<n}}',
-         """
-         for k
-             <> Tcond[k] = T[k] < 0.5
-             if Tcond[k]
-                 cp[k] = 2 * T[k] + Tcond[k]
-             end
-         end
-         """)
-
-    knl = lp.fix_parameters(knl, n=200)
-    knl = lp.add_and_infer_dtypes(knl, {"T": np.float32})
-
-    ref_knl = knl
-
-    knl = lp.split_iname(knl, 'k', 2, inner_tag='unr')
-
-    lp.auto_test_vs_ref(ref_knl, ctx, knl)
-
 
 def test_unr_and_conditionals(ctx_factory):
     ctx = ctx_factory()
@@ -1717,6 +1750,7 @@ def test_temp_initializer(ctx_factory, src_order, tmp_order):
                     initializer=a,
                     shape=lp.auto,
                     scope=lp.temp_var_scope.PRIVATE,
+                    read_only=True,
                     order=tmp_order),
                 "..."
                 ])
@@ -1727,6 +1761,31 @@ def test_temp_initializer(ctx_factory, src_order, tmp_order):
     evt, (a2,) = knl(queue, out_host=True)
 
     assert np.array_equal(a, a2)
+
+
+def test_const_temp_with_initializer_not_saved():
+    knl = lp.make_kernel(
+        "{[i]: 0<=i<10}",
+        """
+        ... gbarrier
+        out[i] = tmp[i]
+        """,
+        [
+            lp.TemporaryVariable("tmp",
+                initializer=np.arange(10),
+                shape=lp.auto,
+                scope=lp.temp_var_scope.PRIVATE,
+                read_only=True),
+            "..."
+            ],
+        seq_dependencies=True)
+
+    knl = lp.preprocess_kernel(knl)
+    knl = lp.get_one_scheduled_kernel(knl)
+    knl = lp.save_and_reload_temporaries(knl)
+
+    # This ensures no save slot was added.
+    assert len(knl.temporary_variables) == 1
 
 
 def test_header_extract():
@@ -1877,6 +1936,141 @@ def test_tight_loop_bounds_codegen():
         "j <= (lid(0) == 0 && -1 + gid(0) == 0 ? 9 : 2 * lid(0)); ++j)"
 
     assert for_loop in cgr.device_code()
+
+
+def test_unscheduled_insn_detection():
+    knl = lp.make_kernel(
+        "{ [i]: 0 <= i < 10 }",
+        """
+        out[i] = i {id=insn1}
+        """,
+        "...")
+
+    knl = lp.get_one_scheduled_kernel(lp.preprocess_kernel(knl))
+    insn1, = lp.find_instructions(knl, "id:insn1")
+    knl.instructions.append(insn1.copy(id="insn2"))
+
+    from loopy.diagnostic import UnscheduledInstructionError
+    with pytest.raises(UnscheduledInstructionError):
+        lp.generate_code(knl)
+
+
+def test_integer_reduction(ctx_factory):
+    ctx = ctx_factory()
+    queue = cl.CommandQueue(ctx)
+
+    from loopy.kernel.data import temp_var_scope as scopes
+    from loopy.types import to_loopy_type
+
+    n = 200
+    for vtype in [np.int32, np.int64]:
+        var_int = np.random.randint(1000, size=n).astype(vtype)
+        var_lp = lp.TemporaryVariable('var', initializer=var_int,
+                                   read_only=True,
+                                   scope=scopes.PRIVATE,
+                                   dtype=to_loopy_type(vtype),
+                                   shape=lp.auto)
+
+        reductions = [('max', lambda x: x == np.max(var_int)),
+                      ('min', lambda x: x == np.min(var_int)),
+                      ('sum', lambda x: x == np.sum(var_int)),
+                      ('product', lambda x: x == np.prod(var_int)),
+                      ('argmax', lambda x: (x[0] == np.max(var_int) and
+                        var_int[out[1]] == np.max(var_int))),
+                      ('argmin', lambda x: (x[0] == np.min(var_int) and
+                        var_int[out[1]] == np.min(var_int)))]
+
+        for reduction, function in reductions:
+            kstr = ("out" if 'arg' not in reduction
+                        else "out[0], out[1]")
+            kstr += ' = {0}(k, var[k])'.format(reduction)
+            knl = lp.make_kernel('{[k]: 0<=k<n}',
+                                kstr,
+                                [var_lp, '...'])
+
+            knl = lp.fix_parameters(knl, n=200)
+
+            _, (out,) = knl(queue, out_host=True)
+
+            assert function(out)
+
+
+def assert_barrier_between(knl, id1, id2, ignore_barriers_in_levels=()):
+    from loopy.schedule import (RunInstruction, Barrier, EnterLoop, LeaveLoop)
+    watch_for_barrier = False
+    seen_barrier = False
+    loop_level = 0
+
+    for sched_item in knl.schedule:
+        if isinstance(sched_item, RunInstruction):
+            if sched_item.insn_id == id1:
+                watch_for_barrier = True
+            elif sched_item.insn_id == id2:
+                assert watch_for_barrier
+                assert seen_barrier
+                return
+        elif isinstance(sched_item, Barrier):
+            if watch_for_barrier and loop_level not in ignore_barriers_in_levels:
+                seen_barrier = True
+        elif isinstance(sched_item, EnterLoop):
+            loop_level += 1
+        elif isinstance(sched_item, LeaveLoop):
+            loop_level -= 1
+
+    raise RuntimeError("id2 was not seen")
+
+
+def test_barrier_insertion_near_top_of_loop():
+    knl = lp.make_kernel(
+        "{[i,j]: 0 <= i,j < 10 }",
+        """
+        for i
+         <>a[i] = i  {id=ainit}
+         for j
+          <>t = a[(i + 1) % 10]  {id=tcomp}
+          <>b[i,j] = a[i] + t   {id=bcomp1}
+          b[i,j] = b[i,j] + 1  {id=bcomp2}
+         end
+        end
+        """,
+        seq_dependencies=True)
+
+    knl = lp.tag_inames(knl, dict(i="l.0"))
+    knl = lp.set_temporary_scope(knl, "a", "local")
+    knl = lp.set_temporary_scope(knl, "b", "local")
+    knl = lp.get_one_scheduled_kernel(lp.preprocess_kernel(knl))
+
+    print(knl)
+
+    assert_barrier_between(knl, "ainit", "tcomp")
+    assert_barrier_between(knl, "tcomp", "bcomp1")
+    assert_barrier_between(knl, "bcomp1", "bcomp2")
+
+
+def test_barrier_insertion_near_bottom_of_loop():
+    knl = lp.make_kernel(
+        ["{[i]: 0 <= i < 10 }",
+         "[jmax] -> {[j]: 0 <= j < jmax}"],
+        """
+        for i
+         <>a[i] = i  {id=ainit}
+         for j
+          <>b[i,j] = a[i] + t   {id=bcomp1}
+          b[i,j] = b[i,j] + 1  {id=bcomp2}
+         end
+         a[i] = i + 1 {id=aupdate}
+        end
+        """,
+        seq_dependencies=True)
+    knl = lp.tag_inames(knl, dict(i="l.0"))
+    knl = lp.set_temporary_scope(knl, "a", "local")
+    knl = lp.set_temporary_scope(knl, "b", "local")
+    knl = lp.get_one_scheduled_kernel(lp.preprocess_kernel(knl))
+
+    print(knl)
+
+    assert_barrier_between(knl, "bcomp1", "bcomp2")
+    assert_barrier_between(knl, "ainit", "aupdate", ignore_barriers_in_levels=[1])
 
 
 if __name__ == "__main__":

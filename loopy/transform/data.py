@@ -209,7 +209,7 @@ def add_prefetch(kernel, var_name, sweep_inames=[], dim_arg_names=None,
               oooooooooo
               oooooooooo
 
-        Passing ``fetch_bounding_box=True` gives :mod:`loopy` permission
+        Passing ``fetch_bounding_box=True`` gives :mod:`loopy` permission
         to instead fetch the 'bounding box' of the footprint, i.e.
         this set in the stencil example::
 
@@ -430,6 +430,7 @@ def set_array_axis_names(kernel, ary_names, dim_names):
         kernel = achng.with_changed_array(ary)
 
     return kernel
+
 
 set_array_dim_names = MovedFunctionDeprecationWrapper(set_array_axis_names)
 

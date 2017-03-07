@@ -1495,6 +1495,22 @@ def test_call_with_no_returned_value(ctx_factory):
 # }}}
 
 
+# {{{ call with no return values and options
+
+def test_call_with_options():
+    knl = lp.make_kernel(
+        "{:}",
+        "f() {id=init}"
+        )
+
+    from library_for_test import no_ret_f_mangler
+    knl = lp.register_function_manglers(knl, [no_ret_f_mangler])
+
+    print(lp.generate_code_v2(knl).device_code())
+
+# }}}
+
+
 def test_unschedulable_kernel_detection():
     knl = lp.make_kernel(["{[i,j]:0<=i,j<n}"],
                          """
@@ -1932,8 +1948,8 @@ def test_tight_loop_bounds_codegen():
 
     for_loop = \
         "for (int j = " \
-        "(lid(0) == 0 && gid(0) == 0 ? 0 : -2 + 10 * gid(0) + 2 * lid(0)); " \
-        "j <= (lid(0) == 0 && -1 + gid(0) == 0 ? 9 : 2 * lid(0)); ++j)"
+        "(gid(0) == 0 && lid(0) == 0 ? 0 : -2 + 2 * lid(0) + 10 * gid(0)); " \
+        "j <= (-1 + gid(0) == 0 && lid(0) == 0 ? 9 : 2 * lid(0)); ++j)"
 
     assert for_loop in cgr.device_code()
 
@@ -1993,6 +2009,25 @@ def test_integer_reduction(ctx_factory):
             _, (out,) = knl(queue, out_host=True)
 
             assert function(out)
+
+
+def test_nosync_option_parsing():
+    knl = lp.make_kernel(
+        "{[i]: 0 <= i < 10}",
+        """
+        <>t = 1 {id=insn1,nosync=insn1}
+        t = 2   {id=insn2,nosync=insn1:insn2}
+        t = 3   {id=insn3,nosync=insn1@local:insn2@global:insn3@any}
+        t = 4   {id=insn4,nosync_query=id:insn*@local}
+        t = 5   {id=insn5,nosync_query=id:insn1}
+        """,
+        options=lp.Options(allow_terminal_colors=False))
+    kernel_str = str(knl)
+    assert "# insn1,no_sync_with=insn1@any" in kernel_str
+    assert "# insn2,no_sync_with=insn1@any:insn2@any" in kernel_str
+    assert "# insn3,no_sync_with=insn1@local:insn2@global:insn3@any" in kernel_str
+    assert "# insn4,no_sync_with=insn1@local:insn2@local:insn3@local:insn5@local" in kernel_str  # noqa
+    assert "# insn5,no_sync_with=insn1@any" in kernel_str
 
 
 def assert_barrier_between(knl, id1, id2, ignore_barriers_in_levels=()):

@@ -23,6 +23,7 @@ THE SOFTWARE.
 """
 
 import six  # noqa
+import pytest
 from six.moves import range
 
 import sys
@@ -73,6 +74,74 @@ def test_compute_sccs():
         for i in range(40):
             graph = generate_random_graph(nnodes)
             verify_sccs(graph, compute_sccs(graph))
+
+
+def test_SetTrie():
+    from loopy.kernel.tools import SetTrie
+
+    s = SetTrie()
+    s.add_or_update(set([1, 2, 3]))
+    s.add_or_update(set([4, 2, 1]))
+    s.add_or_update(set([1, 5]))
+
+    result = []
+    s.descend(lambda prefix: result.extend(prefix))
+    assert result == [1, 2, 3, 4, 5]
+
+    with pytest.raises(ValueError):
+        s.add_or_update(set([1, 4]))
+
+
+class PicklableItem(object):
+
+    flags = {"unpickled": False}
+
+    def __getstate__(self):
+        return True
+
+    def __setstate__(self, state):
+        PicklableItem.flags["unpickled"] = True
+
+
+def test_LazilyUnpicklingDictionary():
+    def is_unpickled():
+        return PicklableItem.flags["unpickled"]
+
+    from loopy.tools import LazilyUnpicklingDictionary
+
+    mapping = LazilyUnpicklingDictionary({0: PicklableItem()})
+
+    assert not is_unpickled()
+
+    from pickle import loads, dumps
+
+    pickled_mapping = dumps(mapping)
+
+    # {{{ test lazy loading
+
+    mapping = loads(pickled_mapping)
+    assert not is_unpickled()
+    list(mapping.keys())
+    assert not is_unpickled()
+    assert isinstance(mapping[0], PicklableItem)
+    assert is_unpickled()
+
+    # }}}
+
+    # {{{ test multi round trip
+
+    mapping = loads(dumps(loads(pickled_mapping)))
+    assert isinstance(mapping[0], PicklableItem)
+
+    # }}}
+
+    # {{{ test empty map
+
+    mapping = LazilyUnpicklingDictionary({})
+    mapping = loads(dumps(mapping))
+    assert len(mapping) == 0
+
+    # }}}
 
 
 if __name__ == "__main__":

@@ -167,6 +167,11 @@ def get_default_insn_options_dict():
         }
 
 
+from collections import namedtuple
+
+_NosyncParseResult = namedtuple("_NosyncParseResult", "expr, scope")
+
+
 def parse_insn_options(opt_dict, options_str, assignee_names=None):
     if options_str is None:
         return opt_dict
@@ -174,6 +179,20 @@ def parse_insn_options(opt_dict, options_str, assignee_names=None):
     is_with_block = assignee_names is None
 
     result = opt_dict.copy()
+
+    def parse_nosync_option(opt_value):
+        if "@" in opt_value:
+            expr, scope = opt_value.split("@")
+        else:
+            expr = opt_value
+            scope = "any"
+        allowable_scopes = ("local", "global", "any")
+        if scope not in allowable_scopes:
+            raise ValueError(
+                "unknown scope for nosync option: '%s' "
+                "(allowable scopes are %s)" %
+                (scope, ', '.join("'%s'" % s for s in allowable_scopes)))
+        return _NosyncParseResult(expr, scope)
 
     for option in options_str.split(","):
         option = option.strip()
@@ -242,23 +261,24 @@ def parse_insn_options(opt_dict, options_str, assignee_names=None):
                 raise LoopyError("'nosync' option may not be specified "
                         "in a 'with' block")
 
-            # TODO: Come up with a syntax that allows the user to express
-            # different synchronization scopes.
             result["no_sync_with"] = result["no_sync_with"].union(frozenset(
-                    (intern(dep.strip()), "any")
-                    for dep in opt_value.split(":") if dep.strip()))
+                    (option.expr.strip(), option.scope)
+                    for option in (
+                            parse_nosync_option(entry)
+                            for entry in opt_value.split(":"))
+                    if option.expr.strip()))
 
         elif opt_key == "nosync_query" and opt_value is not None:
             if is_with_block:
                 raise LoopyError("'nosync' option may not be specified "
                         "in a 'with' block")
 
+            match_expr, scope = parse_nosync_option(opt_value)
+
             from loopy.match import parse_match
-            match = parse_match(opt_value)
-            # TODO: Come up with a syntax that allows the user to express
-            # different synchronization scopes.
+            match = parse_match(match_expr)
             result["no_sync_with"] = result["no_sync_with"].union(
-                    frozenset([(match, "any")]))
+                    frozenset([(match, scope)]))
 
         elif opt_key == "groups" and opt_value is not None:
             result["groups"] = frozenset(
@@ -374,7 +394,7 @@ ELSE_RE = re.compile("^\s*else\s*$")
 INSN_RE = re.compile(
         "^"
         "\s*"
-        "(?P<lhs>.+?)"
+        "(?P<lhs>[^{]+?)"
         "\s*(?<!\:)=\s*"
         "(?P<rhs>.+?)"
         "\s*?"
@@ -1604,15 +1624,30 @@ def _resolve_dependencies(knl, insn, deps):
     new_deps = []
 
     for dep in deps:
+        found_any = False
+
         if isinstance(dep, MatchExpressionBase):
             for new_dep in find_instructions(knl, dep):
                 if new_dep.id != insn.id:
                     new_deps.append(new_dep.id)
+                    found_any = True
         else:
             from fnmatch import fnmatchcase
             for other_insn in knl.instructions:
                 if fnmatchcase(other_insn.id, dep):
                     new_deps.append(other_insn.id)
+                    found_any = True
+
+        if not found_any:
+            raise LoopyError("instruction '%s' declared a depency on '%s', "
+                    "which did not resolve to any instruction present in the "
+                    "kernel '%s'"
+                    % (insn.id, dep, knl.name))
+
+    for dep_id in new_deps:
+        if dep_id not in knl.id_to_insn:
+            raise LoopyError("instruction '%s' depends on instruction id '%s', "
+                    "which was not found" % (insn.id, dep_id))
 
     return frozenset(new_deps)
 
@@ -1627,7 +1662,7 @@ def resolve_dependencies(knl):
                         (resolved_insn_id, nosync_scope)
                         for nosync_dep, nosync_scope in insn.no_sync_with
                         for resolved_insn_id in
-                        _resolve_dependencies(knl, insn, nosync_dep)),
+                        _resolve_dependencies(knl, insn, (nosync_dep,))),
                     ))
 
     return knl.copy(instructions=new_insns)

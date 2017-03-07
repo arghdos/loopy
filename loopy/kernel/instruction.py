@@ -222,6 +222,10 @@ class InstructionBase(ImmutableRecord):
         if within_inames_is_final is None:
             within_inames_is_final = False
 
+        if isinstance(depends_on, str):
+            depends_on = frozenset(
+                    s.strip() for s in depends_on.split(",") if s.strip())
+
         if depends_on_is_final is None:
             depends_on_is_final = False
 
@@ -388,10 +392,8 @@ class InstructionBase(ImmutableRecord):
         if self.depends_on:
             result.append("dep="+":".join(self.depends_on))
         if self.no_sync_with:
-            # TODO: Come up with a syntax to express different kinds of
-            # synchronization scopes.
             result.append("nosync="+":".join(
-                    insn_id for insn_id, _ in self.no_sync_with))
+                    "%s@%s" % entry for entry in self.no_sync_with))
         if self.groups:
             result.append("groups=%s" % ":".join(self.groups))
         if self.conflicts_with_groups:

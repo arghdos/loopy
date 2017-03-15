@@ -135,6 +135,54 @@ def test_fusion():
 
     print(knl)
 
+def test_initialized_temporaries_fusion():
+    data = lp.TemporaryVariable('data', initializer=np.arange(-10))
+
+    exp_kernel = lp.make_kernel(
+         ''' { [i]: 0<=i<n } ''',
+         ''' exp[i] = pow(E, z[i])''',
+         [data, '...'],
+         assumptions="n>0")
+
+    sum_kernel = lp.make_kernel(
+        '{ [j]: 0<=j<n }',
+        'out2 = sum(j, exp[j])',
+        [data, '...'],
+        assumptions='n>0')
+
+    knl = lp.fuse_kernels([exp_kernel, sum_kernel],
+        duplicate_intialized=False)
+
+    assert len([x for x in knl.temporary_variables if x.startswith('data') == 1])
+
+    print(knl)
+
+def test_instruction_collapsed_fusion():
+    data = lp.TemporaryVariable('data', initializer=np.arange(-10))
+
+    exp_kernel = lp.make_kernel(
+         ''' { [i]: 0<=i<n } ''',
+         ''' <> base = 1.5 {id=baseid}
+             exp[i] = base * pow(E, z[i])''',
+         [data, '...'],
+         assumptions="n>0")
+
+    sum_kernel = lp.make_kernel(
+        '{ [j]: 0<=j<n }',
+        ''' <> base = 1.5 {id=baseid}
+            out2 = sum(j, base * exp[j])''',
+        [data, '...'],
+        assumptions='n>0')
+
+    knl = lp.fuse_kernels([exp_kernel, sum_kernel],
+        collapse_insns_ids=['baseid'])
+
+    assert len([x for x in knl.instructions if x.id.startswith('baseid') == 1])
+    assert len(knl.instructions == 3)
+
+    print(knl)
+
+
 
 def test_alias_temporaries(ctx_factory):
     ctx = ctx_factory()

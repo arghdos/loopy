@@ -136,17 +136,19 @@ def test_fusion():
     print(knl)
 
 def test_initialized_temporaries_fusion():
-    data = lp.TemporaryVariable('data', initializer=np.arange(-10))
+    from loopy.kernel.data import temp_var_scopes as scopes
+    data = lp.TemporaryVariable('data', initializer=np.arange(0, -10, -1),
+        shape=(10,), scopes.GLOBAL)
 
     exp_kernel = lp.make_kernel(
-         ''' { [i]: 0<=i<n } ''',
-         ''' exp[i] = pow(E, z[i])''',
+         ''' { [i]: 0<=i<10 } ''',
+         ''' exp[i] = pow(E, data[i])''',
          [data, '...'],
          assumptions="n>0")
 
     sum_kernel = lp.make_kernel(
-        '{ [j]: 0<=j<n }',
-        'out2 = sum(j, exp[j])',
+        '{ [j]: 0<=j<10 }',
+        'out2 = sum(j, data[j] * exp[j])',
         [data, '...'],
         assumptions='n>0')
 
@@ -158,7 +160,6 @@ def test_initialized_temporaries_fusion():
     print(knl)
 
 def test_instruction_collapsed_fusion():
-    data = lp.TemporaryVariable('data', initializer=np.arange(-10))
 
     exp_kernel = lp.make_kernel(
          ''' { [i]: 0<=i<n } ''',

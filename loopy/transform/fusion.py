@@ -408,7 +408,7 @@ def fuse_kernels(kernels, suffixes=None, data_flow=None,
         # }}}
 
     kernel_insn_ids = []
-    collapse_insn = {insn_id : None for insn_id in collapse_insns_ids}
+    collapse_insn = dict((insn_id, None) for insn_id in collapse_insns_ids)
     result = None
 
     #determine fusion pattern

@@ -138,7 +138,7 @@ def test_fusion():
 def test_initialized_temporaries_fusion():
     from loopy.kernel.data import temp_var_scopes as scopes
     data = lp.TemporaryVariable('data', initializer=np.arange(0, -10, -1),
-        shape=(10,), scopes.GLOBAL)
+        shape=(10,), scope=scopes.GLOBAL)
 
     exp_kernel = lp.make_kernel(
          ''' { [i]: 0<=i<10 } ''',

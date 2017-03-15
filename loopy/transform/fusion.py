@@ -129,8 +129,7 @@ def _merge_values(item_name, val_a, val_b):
 
 # {{{ two-kernel fusion
 
-def _fuse_two_kernels(knla, knlb, duplicate_filter=None,
-    collapse_insn={}):
+def _fuse_two_kernels(knla, knlb, duplicate_filter=None, collapse_insn={}):
     from loopy.kernel import kernel_state
     if knla.state != kernel_state.INITIAL or knlb.state != kernel_state.INITIAL:
         raise LoopyError("can only fuse kernels in INITIAL state")
@@ -196,7 +195,7 @@ def _fuse_two_kernels(knla, knlb, duplicate_filter=None,
     for insn in knlb.instructions:
         if insn.id in collapse_insn:
             if collapse_insn[insn.id] is not None and \
-                collapse_insn[insn.id] != insn:
+                    collapse_insn[insn.id] != insn:
                 raise Exception('Collapsed instruction with id: {id} in kernel'
                     ' {knlb} has an inconsistent definition between the merged '
                     'kernels ({insn_a} != {insn_b}'.format(
@@ -318,7 +317,7 @@ def _fuse_two_kernels(knla, knlb, duplicate_filter=None,
 
 
 def fuse_kernels(kernels, suffixes=None, data_flow=None,
-    duplicate_intialized=True, collapse_insns_ids=[]):
+        duplicate_intialized=True, collapse_insns_ids=[]):
     """Return a kernel that performs all the operations in all entries
     of *kernels*.
 
@@ -438,7 +437,7 @@ def fuse_kernels(kernels, suffixes=None, data_flow=None,
             kernel_insn_ids.append([
                 old_b_id_to_new_b_id[insn.id]
                 for insn in knlb.instructions
-                if insn.id in old_b_id_to_new_b_id #handles collapses
+                if insn.id in old_b_id_to_new_b_id  #handles collapses
                 ])
 
     # {{{ realize data_flow dependencies

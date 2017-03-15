@@ -135,6 +135,7 @@ def test_fusion():
 
     print(knl)
 
+
 def test_initialized_temporaries_fusion():
     from loopy.kernel.data import temp_var_scopes as scopes
     data = lp.TemporaryVariable('data', initializer=np.arange(0, -10, -1),
@@ -159,6 +160,7 @@ def test_initialized_temporaries_fusion():
 
     print(knl)
 
+
 def test_instruction_collapsed_fusion():
 
     exp_kernel = lp.make_kernel(
@@ -182,7 +184,6 @@ def test_instruction_collapsed_fusion():
     assert len(knl.instructions == 3)
 
     print(knl)
-
 
 
 def test_alias_temporaries(ctx_factory):

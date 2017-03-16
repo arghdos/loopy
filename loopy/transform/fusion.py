@@ -129,7 +129,8 @@ def _merge_values(item_name, val_a, val_b):
 
 # {{{ two-kernel fusion
 
-def _fuse_two_kernels(knla, knlb, duplicate_filter=set(), collapse_insn={}):
+def _fuse_two_kernels(knla, knlb, duplicate_filter=None, collapse_insn={},
+        duplicate_intialized=True):
     from loopy.kernel import kernel_state
     if knla.state != kernel_state.INITIAL or knlb.state != kernel_state.INITIAL:
         raise LoopyError("can only fuse kernels in INITIAL state")
@@ -208,7 +209,22 @@ def _fuse_two_kernels(knla, knlb, duplicate_filter=set(), collapse_insn={}):
                 collapse_insn[insn.id] = insn
 
             #add the temporary variable this writes to to the duplicate filter
-            duplicate_filter |= set(insn.assignee_var_names())
+            for assign in insn.assignee_var_names():
+                if assign in knlb.temporary_variables:
+                    if assign not in duplicate_filter:
+                        duplicate_filter[assign] = \
+                            knlb.temporary_variables[assign]
+                    elif knlb.temporary_variables[assign] !=\
+                            duplicate_filter[assign]:
+                        raise Exception('Assigned temporary: {tmp_b} in '
+                            'collapsed instruction with id: {id} in kernel:'
+                            ' {knlb} has an inconsistent definition between'
+                            ' the merged '
+                            'kernels ({tmp_a} != {tmp_b})'.format(
+                                knlb=knlb.name,
+                                tmp_a=str(duplicate_filter[assign]),
+                                tmp_b=str(knlb.temporary_variables[assign])))
+
 
     # }}}
 
@@ -218,10 +234,16 @@ def _fuse_two_kernels(knla, knlb, duplicate_filter=set(), collapse_insn={}):
     for b_name, b_tv in six.iteritems(knlb.temporary_variables):
         assert b_name == b_tv.name
 
-        if b_name in duplicate_filter:
-            continue
-
         new_tv_name = vng(b_name)
+
+        if duplicate_intialized:
+            if b_tv.initializer is not None:
+                if b_name not in duplicate_filter:
+                    #first occurance
+                    duplicate_filter[b_name] = b_tv
+        if b_name in duplicate_filter and b_tv == duplicate_filter[b_name]:
+            #seen previously _and_ matches previous occurance
+            continue
 
         if new_tv_name != b_name:
             b_var_renames[b_name] = var(new_tv_name)
@@ -424,20 +446,6 @@ def fuse_kernels(kernels, suffixes=None, data_flow=None,
 
     #determine fusion pattern
     duplicate_filter = {}
-    if not duplicate_intialized:
-        for knl in kernels:
-            for name, var in six.iteritems(knl.temporary_variables):
-                if var.initializer is not None:
-                    if name in duplicate_filter \
-                            and var != duplicate_filter[name]:
-                        #force redefinition
-                        duplicate_filter[name] = None
-                    elif name not in duplicate_filter:
-                        #first find
-                        duplicate_filter[name] = var
-
-    duplicate_filter = set([x for x in duplicate_filter if duplicate_filter[x]
-        is not None])
 
     for knlb in kernels:
         if result is None:
@@ -454,7 +462,8 @@ def fuse_kernels(kernels, suffixes=None, data_flow=None,
                     knla=result,
                     knlb=knlb,
                     duplicate_filter=duplicate_filter,
-                    collapse_insn=collapse_insn)
+                    collapse_insn=collapse_insn,
+                    duplicate_intialized=duplicate_intialized)
 
             kernel_insn_ids.append([
                 old_b_id_to_new_b_id[insn.id]

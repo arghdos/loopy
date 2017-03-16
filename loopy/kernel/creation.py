@@ -564,6 +564,7 @@ def parse_special_insn(groups, insn_options):
 
     insn_id = insn_options.pop("insn_id", None)
     inames_to_dup = insn_options.pop("inames_to_dup", [])
+    within_inames = insn_options.pop("within_inames", [])
 
     kwargs = dict(
                 id=(
@@ -581,6 +582,7 @@ def parse_special_insn(groups, insn_options):
     elif special_insn_kind == "lbarrier":
         cls = BarrierInstruction
         kwargs["kind"] = "local"
+        kwargs["within_inames"] = within_inames
     elif special_insn_kind == "nop":
         cls = NoOpInstruction
     else:

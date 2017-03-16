@@ -129,7 +129,7 @@ def _merge_values(item_name, val_a, val_b):
 
 # {{{ two-kernel fusion
 
-def _fuse_two_kernels(knla, knlb):
+def _fuse_two_kernels(knla, knlb, duplicate_filter=set(), collapse_insn={}):
     from loopy.kernel import kernel_state
     if knla.state != kernel_state.INITIAL or knlb.state != kernel_state.INITIAL:
         raise LoopyError("can only fuse kernels in INITIAL state")
@@ -190,11 +190,36 @@ def _fuse_two_kernels(knla, knlb):
 
     # }}}
 
+    # {{{ check for collapsed instructions
+
+    for insn in knlb.instructions:
+        if insn.id in collapse_insn:
+            if collapse_insn[insn.id] is not None and \
+                    collapse_insn[insn.id] != insn:
+                raise Exception('Collapsed instruction with id: {id} in kernel'
+                    ' {knlb} has an inconsistent definition between the merged '
+                    'kernels ({insn_a} != {insn_b})'.format(
+                        id=insn.id,
+                        knlb=knlb.name,
+                        insn_a=str(collapse_insn[insn.id]),
+                        insn_b=str(insn)))
+            elif collapse_insn[insn.id] is None:
+                #first instance
+                collapse_insn[insn.id] = insn
+
+            #add the temporary variable this writes to to the duplicate filter
+            duplicate_filter |= set(insn.assignee_var_names())
+
+    # }}}
+
     # {{{ fuse temporaries
 
     new_temporaries = knla.temporary_variables.copy()
     for b_name, b_tv in six.iteritems(knlb.temporary_variables):
         assert b_name == b_tv.name
+
+        if b_name in duplicate_filter:
+            continue
 
         new_tv_name = vng(b_name)
 
@@ -208,11 +233,27 @@ def _fuse_two_kernels(knla, knlb):
 
     knlb = _apply_renames_in_exprs(knlb, b_var_renames)
 
+    #now check that the renames didn't invalidate the collapsed insn's
+    for insn_id, insn in six.iteritems(collapse_insn):
+        #check knlb
+        insnb = next((insn for insn in knlb.instructions if insn.id == insn_id),
+            None)
+        if insnb != insn:
+            raise Exception('Collapsed instruction with id: {id} in kernel'
+                    ' {knlb} has an inconsistent definition between the merged '
+                    'kernels due to differing temporary variables.'.format(
+                        id=insn.id,
+                        knlb=knlb.name))
+
     from pymbolic.imperative.transform import \
-            fuse_instruction_streams_with_unique_ids
+            fuse_instruction_streams_with_overlapping_ids
     new_instructions, old_b_id_to_new_b_id = \
-            fuse_instruction_streams_with_unique_ids(
-                    knla.instructions, knlb.instructions)
+            fuse_instruction_streams_with_overlapping_ids(
+                    knla.instructions,
+                    knlb.instructions,
+                    [x for x in collapse_insn.keys()
+                        if collapse_insn[x] is not None]
+                    )
 
     # {{{ fuse assumptions
 
@@ -287,7 +328,8 @@ def _fuse_two_kernels(knla, knlb):
 # }}}
 
 
-def fuse_kernels(kernels, suffixes=None, data_flow=None):
+def fuse_kernels(kernels, suffixes=None, data_flow=None,
+        duplicate_intialized=True, collapse_insns_ids=[]):
     """Return a kernel that performs all the operations in all entries
     of *kernels*.
 
@@ -301,6 +343,14 @@ def fuse_kernels(kernels, suffixes=None, data_flow=None):
         writers of *var_name* in ``kernels[from_kernel]`` to
         readers of *var_name* in ``kernels[to_kernel]``.
         *from_kernel* and *to_kernel* are indices into *kernels*.
+    :duplicate_const_intialized: boool
+        If False, constant temporary variables that have initializers will be
+        not be duplicated in the resulting fused kernel [Default: True]
+    :collapse_insns_ids: list of str
+        If specified, a list of instruction ids shared by any entries in *kernels*
+        that should be collapsed into a single instruction in the resulting fused kernel.
+        This will throw an exception if the instructions from the shared IDs are not
+        identical.
 
     The components of the kernels are fused as follows:
 
@@ -369,21 +419,48 @@ def fuse_kernels(kernels, suffixes=None, data_flow=None):
         # }}}
 
     kernel_insn_ids = []
+    collapse_insn = dict((insn_id, None) for insn_id in collapse_insns_ids)
     result = None
+
+    #determine fusion pattern
+    duplicate_filter = {}
+    if not duplicate_intialized:
+        for knl in kernels:
+            for name, var in six.iteritems(knl.temporary_variables):
+                if var.initializer is not None:
+                    if name in duplicate_filter \
+                            and var != duplicate_filter[name]:
+                        #force redefinition
+                        duplicate_filter[name] = None
+                    elif name not in duplicate_filter:
+                        #first find
+                        duplicate_filter[name] = var
+
+    duplicate_filter = set([x for x in duplicate_filter if duplicate_filter[x]
+        is not None])
 
     for knlb in kernels:
         if result is None:
             result = knlb
             kernel_insn_ids.append([
                 insn.id for insn in knlb.instructions])
+            for x in kernel_insn_ids[0]:
+                if x in collapse_insns_ids:
+                    collapse_insn[x] = next(insn for insn in knlb.instructions if
+                        insn.id == x)
+
         else:
             result, old_b_id_to_new_b_id = _fuse_two_kernels(
                     knla=result,
-                    knlb=knlb)
+                    knlb=knlb,
+                    duplicate_filter=duplicate_filter,
+                    collapse_insn=collapse_insn)
 
             kernel_insn_ids.append([
                 old_b_id_to_new_b_id[insn.id]
-                for insn in knlb.instructions])
+                for insn in knlb.instructions
+                if insn.id in old_b_id_to_new_b_id  #handles collapses
+                ])
 
     # {{{ realize data_flow dependencies
 

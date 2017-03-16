@@ -136,6 +136,113 @@ def test_fusion():
     print(knl)
 
 
+def test_initialized_temporaries_fusion():
+    from loopy.kernel.data import temp_var_scope as scopes
+    data = lp.TemporaryVariable('data', initializer=np.arange(0, -10, -1),
+        shape=(10,), scope=scopes.GLOBAL, read_only=True)
+
+    exp_kernel = lp.make_kernel(
+         ''' { [i]: 0<=i<10 } ''',
+         ''' exp[i] = pow(E, data[i])''',
+         [data, '...'])
+
+    sum_kernel = lp.make_kernel(
+        '{ [j]: 0<=j<10 }',
+        'out2[j] = sum(j, data[j] * exp[j])',
+        [data, '...'])
+
+    knl = lp.fuse_kernels([exp_kernel, sum_kernel],
+        duplicate_intialized=False)
+
+    assert len([x for x in knl.temporary_variables if x.startswith('data') == 1])
+
+    print(knl)
+
+    #now test differing temporaries
+    data2 = lp.TemporaryVariable('data', initializer=np.arange(0, -11, -1),
+        shape=(11,), scope=scopes.GLOBAL, read_only=True)
+    sum_kernel = lp.make_kernel(
+        '{ [j]: 0<=j<10 }',
+        'out2[j] = sum(j, data[j] * exp[j])',
+        [data2, '...'])
+
+    knl = lp.fuse_kernels([exp_kernel, sum_kernel],
+            duplicate_intialized=False)
+
+    print(knl)
+
+    assert len(knl.temporary_variables) == 2
+
+
+def test_instruction_collapsed_fusion():
+    from loopy.kernel.data import temp_var_scope as scopes
+    exp_kernel = lp.make_kernel(
+         ''' { [i]: 0<=i<n } ''',
+         ''' <> base = 1.5 {id=baseid}
+             exp[i] = base * pow(E, z[i])''',
+         ['...'],
+         assumptions="n>0")
+
+    sum_kernel = lp.make_kernel(
+        '{ [j]: 0<=j<n }',
+        ''' <> base = 1.5 {id=baseid}
+            out2[j] = sum(j, base * exp[j])''',
+        ['...'],
+        assumptions='n>0')
+
+    knl = lp.fuse_kernels([exp_kernel, sum_kernel],
+        collapse_insns_ids=['baseid'])
+
+    assert len([x for x in knl.instructions if x.id.startswith('baseid') == 1])
+    assert len(knl.instructions) == 3
+
+    print(knl)
+
+    #test differing instructions fail
+    sum_kernel = lp.make_kernel(
+    '{ [j]: 0<=j<n }',
+    ''' <> base = 1.0 {id=baseid}
+        out2[j] = base * exp[j]''',
+    ['...'],
+    assumptions='n>0')
+
+    #test invalidation by differing temporaries
+    data = lp.TemporaryVariable('data', initializer=np.arange(0, -10, -1),
+        shape=(10,), scope=scopes.GLOBAL, read_only=True)
+
+    exp_kernel = lp.make_kernel(
+         ''' { [j]: 0<=j<10 } ''',
+         '''<> datum = data[j] {id=data}
+            exp[j] = pow(E, datum)''',
+         [data, '...'])
+
+    try:
+        #this should fail, as the insn 'baseid' differs between the two
+        #kernels
+        knl = lp.fuse_kernels([exp_kernel, sum_kernel],
+            collapse_insns_ids=['baseid'])
+        assert False
+    except:
+        pass
+
+    #now test differing temporaries
+    data2 = lp.TemporaryVariable('data', initializer=np.arange(0, -11, -1),
+        shape=(11,), scope=scopes.GLOBAL, read_only=True)
+    sum_kernel = lp.make_kernel(
+        '{ [j]: 0<=j<10 }',
+        '''<> datum = data[j] {id=data}
+        out2[j] = datum * exp[j]''',
+        [data2, '...'])
+
+    try:
+        #this should fail, as the 'data' var in sum_kernel will be renamed
+        knl = lp.fuse_kernels([exp_kernel, sum_kernel],
+            duplicate_intialized=False, collapse_insns_ids=['data'])
+        assert False
+    except:
+        pass
+
+
 def test_alias_temporaries(ctx_factory):
     ctx = ctx_factory()
 

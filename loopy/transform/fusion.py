@@ -198,7 +198,7 @@ def _fuse_two_kernels(knla, knlb, duplicate_filter=set(), collapse_insn={}):
                     collapse_insn[insn.id] != insn:
                 raise Exception('Collapsed instruction with id: {id} in kernel'
                     ' {knlb} has an inconsistent definition between the merged '
-                    'kernels ({insn_a} != {insn_b}'.format(
+                    'kernels ({insn_a} != {insn_b})'.format(
                         id=insn.id,
                         knlb=knlb.name,
                         insn_a=str(collapse_insn[insn.id]),
@@ -232,6 +232,18 @@ def _fuse_two_kernels(knla, knlb, duplicate_filter=set(), collapse_insn={}):
     # }}}
 
     knlb = _apply_renames_in_exprs(knlb, b_var_renames)
+
+    #now check that the renames didn't invalidate the collapsed insn's
+    for insn_id, insn in six.iteritems(collapse_insn):
+        #check knlb
+        insnb = next((insn for insn in knlb.instructions if insn.id == insn_id),
+            None)
+        if insnb != insn:
+            raise Exception('Collapsed instruction with id: {id} in kernel'
+                    ' {knlb} has an inconsistent definition between the merged '
+                    'kernels due to differing temporary variables.'.format(
+                        id=insn.id,
+                        knlb=knlb.name))
 
     from pymbolic.imperative.transform import \
             fuse_instruction_streams_with_overlapping_ids

@@ -411,11 +411,21 @@ def fuse_kernels(kernels, suffixes=None, data_flow=None,
     result = None
 
     #determine fusion pattern
-    duplicate_filter = set()
+    duplicate_filter = {}
     if not duplicate_intialized:
-        duplicate_filter |= set([name for knl in kernels
-            for name, var in six.iteritems(knl.temporary_variables)
-            if var.initializer is not None])
+        for knl in kernels:
+            for name, var in six.iteritems(knl.temporary_variables):
+                if var.initializer is not None:
+                    if name in duplicate_filter \
+                            and var != duplicate_filter[name]:
+                        #force redefinition
+                        duplicate_filter[name] = None
+                    elif name not in duplicate_filter:
+                        #first find
+                        duplicate_filter[name] = var
+
+    duplicate_filter = [x for x in duplicate_filter if duplicate_filter[x]
+        is noe None]
 
     for knlb in kernels:
         if result is None:

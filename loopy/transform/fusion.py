@@ -129,7 +129,7 @@ def _merge_values(item_name, val_a, val_b):
 
 # {{{ two-kernel fusion
 
-def _fuse_two_kernels(knla, knlb, duplicate_filter=None, collapse_insn={}):
+def _fuse_two_kernels(knla, knlb, duplicate_filter=set(), collapse_insn={}):
     from loopy.kernel import kernel_state
     if knla.state != kernel_state.INITIAL or knlb.state != kernel_state.INITIAL:
         raise LoopyError("can only fuse kernels in INITIAL state")
@@ -424,8 +424,8 @@ def fuse_kernels(kernels, suffixes=None, data_flow=None,
                         #first find
                         duplicate_filter[name] = var
 
-    duplicate_filter = [x for x in duplicate_filter if duplicate_filter[x]
-        is noe None]
+    duplicate_filter = set([x for x in duplicate_filter if duplicate_filter[x]
+        is not None])
 
     for knlb in kernels:
         if result is None:

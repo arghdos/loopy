@@ -238,7 +238,7 @@ def _fuse_two_kernels(knla, knlb, duplicate_filter=set(), collapse_insn={}):
         #check knlb
         insnb = next((insn for insn in knlb.instructions if insn.id == insn_id),
             None)
-        if insnb != insn:
+        if insnb is not None and insnb != insn:
             raise Exception('Collapsed instruction with id: {id} in kernel'
                     ' {knlb} has an inconsistent definition between the merged '
                     'kernels due to differing temporary variables.'.format(

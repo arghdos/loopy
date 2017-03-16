@@ -1301,11 +1301,17 @@ class BarrierInstruction(_DataObliviousInstruction):
 
     .. attribute:: kind
 
-        A string, currently only ``"global"``.
+        A string, currently only ``"global"`` or ``"local"``.
 
     The textual syntax in a :mod:`loopy` kernel is::
 
         ... gbarrier
+
+    or
+
+        ... lbarrier
+
+    respectively.
     """
 
     fields = _DataObliviousInstruction.fields | set(["kind"])
@@ -1317,7 +1323,7 @@ class BarrierInstruction(_DataObliviousInstruction):
             priority=None,
             boostable=None, boostable_into=None,
             predicates=None, tags=None, kind="global"):
-        assert kind == "global"
+        assert kind in ["global", "local"]
 
         if predicates:
             raise LoopyError("conditional barriers are not supported")

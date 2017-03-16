@@ -578,7 +578,7 @@ def parse_special_insn(groups, insn_options):
     if special_insn_kind == "gbarrier":
         cls = BarrierInstruction
         kwargs["kind"] = "global"
-    elif special_insn_kind = "lbarrier":
+    elif special_insn_kind == "lbarrier":
         cls = BarrierInstruction
         kwargs["kind"] = "local"
     elif special_insn_kind == "nop":

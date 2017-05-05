@@ -30,8 +30,7 @@ import subprocess
 from loopy.execution import (KernelExecutorBase, _KernelInfo,
                              ExecutionWrapperGeneratorBase)
 from pytools import memoize_method
-from pytools.py_codegen import (
-        Indentation, PythonFunctionGenerator)
+from pytools.py_codegen import (Indentation)
 
 import weakref
 
@@ -351,7 +350,8 @@ class CKernelExecutor(KernelExecutorBase):
         """
 
         self.compiler = compiler if compiler else CCompiler()
-        super(CKernelExecutor, self).__init__(kernel)
+        super(CKernelExecutor, self).__init__(kernel,
+                                              CExecutionWrapperGenerator())
 
     @memoize_method
     def kernel_info(self, arg_to_dtype_set=frozenset(), all_kwargs=None):

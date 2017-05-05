@@ -49,7 +49,7 @@ class CExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
 
     def __init__(self):
         system_args = ["_lpy_c_kernels"]
-        super(ExecutionWrapperGeneratorBase, self).__init__(system_args)
+        super(CExecutionWrapperGenerator, self).__init__(system_args)
 
     def python_dtype_str(self, dtype):
         # TODO: figure out why isbuiltin isn't working in test (requiring second

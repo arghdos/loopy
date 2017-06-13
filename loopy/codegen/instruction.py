@@ -126,10 +126,13 @@ def generate_assignment_instruction_code(codegen_state, insn):
 
     # }}}
 
-    from pymbolic.primitives import Variable, Subscript
+    from pymbolic.primitives import Variable, Subscript, Lookup
     from loopy.symbolic import LinearSubscript
 
     lhs = insn.assignee
+    if isinstance(lhs, Lookup):
+        lhs = lhs.aggregate
+
     if isinstance(lhs, Variable):
         assignee_var_name = lhs.name
         assignee_indices = ()
@@ -144,6 +147,8 @@ def generate_assignment_instruction_code(codegen_state, insn):
 
     else:
         raise RuntimeError("invalid lvalue '%s'" % lhs)
+
+    del lhs
 
     result = codegen_state.ast_builder.emit_assignment(codegen_state, insn)
 
@@ -195,7 +200,7 @@ def generate_assignment_instruction_code(codegen_state, insn):
                     "(%s).y" % lhs_code])
 
         if printf_args:
-            printf_args_str = ", " + ", ".join(printf_args)
+            printf_args_str = ", " + ", ".join(str(v) for v in printf_args)
         else:
             printf_args_str = ""
 

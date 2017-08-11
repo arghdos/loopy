@@ -205,6 +205,7 @@ def test_ispc_vector_sizes_and_targets(vec_width, target, n):
         assert np.allclose(knl(a=a_np)[1], 2 * a_np)
     except LoopyError:
         assert n == 10
+        pytest.xfail('Issue from mailing list')
 
 
 @pytest.mark.parametrize("dtype", [np.int32, np.int64, np.float32, np.float64])

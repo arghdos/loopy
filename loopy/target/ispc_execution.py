@@ -84,7 +84,7 @@ class ISPCToolchain(GCCLikeToolchain):
             if result != 0:
                 raise CompileError("getting dependencies failed: " + stderr)
 
-            lines = join_continued_lines(tempfile.read().split("\n"))
+            lines = join_continued_lines(tempfile.read().decode().split("\n"))
 
         from pytools import flatten
         return set(flatten(
@@ -176,7 +176,7 @@ class ISPCCompiler(CCompiler):
                 import re
                 from tempfile import NamedTemporaryFile
                 with NamedTemporaryFile(prefix='loopy') as tempfile:
-                    tempfile.write('void test(){} \n')
+                    tempfile.write(b'void test(){} \n')
                     tempfile.flush()
                     _, _, stderr = call_capture_output((['ispc', tempfile.name]))
             # search output

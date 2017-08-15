@@ -565,6 +565,9 @@ class VarAtomicity(object):
     .. attribute:: var_name
     """
 
+    ordering = memory_ordering.seq_cst
+    scope = memory_scope.auto
+
     def __init__(self, var_name):
         self.var_name = var_name
 
@@ -577,10 +580,18 @@ class VarAtomicity(object):
 
     def __eq__(self, other):
         return (type(self) == type(other)
-                and self.var_name == other.var_name)
+                and self.var_name == other.var_name
+                and self.ordering == other.ordering
+                and self.scope == other.scope)
 
     def __ne__(self, other):
         return not self.__eq__(other)
+
+    def __str__(self):
+        return "update[%s]%s/%s" % (
+                self.var_name,
+                memory_ordering.to_string(self.ordering),
+                memory_scope.to_string(self.scope))
 
 
 class AtomicInit(VarAtomicity):
@@ -595,12 +606,8 @@ class AtomicInit(VarAtomicity):
 
         super(AtomicInit, self).update_persistent_hash(key_hash, key_builder)
         key_builder.rec(key_hash, "AtomicInit")
-
-    def __str__(self):
-        return "update[%s]%s/%s" % (
-                self.var_name,
-                memory_ordering.to_string(self.ordering),
-                memory_scope.to_string(self.scope))
+        key_builder.rec(key_hash, self.ordering)
+        key_builder.rec(key_hash, self.scope)
 
 
 class AtomicUpdate(VarAtomicity):
@@ -615,9 +622,6 @@ class AtomicUpdate(VarAtomicity):
         One of the values from :class:`memory_scope`
     """
 
-    ordering = memory_ordering.seq_cst
-    scope = memory_scope.auto
-
     def update_persistent_hash(self, key_hash, key_builder):
         """Custom hash computation function for use with
         :class:`pytools.persistent_dict.PersistentDict`.
@@ -627,11 +631,6 @@ class AtomicUpdate(VarAtomicity):
         key_builder.rec(key_hash, "AtomicUpdate")
         key_builder.rec(key_hash, self.ordering)
         key_builder.rec(key_hash, self.scope)
-
-    def __eq__(self, other):
-        return (super(AtomicUpdate, self).__eq__(other)
-                and self.ordering == other.ordering
-                and self.scope == other.scope)
 
     def __str__(self):
         return "update[%s]%s/%s" % (

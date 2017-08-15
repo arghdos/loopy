@@ -576,7 +576,7 @@ class ISPCASTBuilder(CASTBuilder):
 
             var_kind = '_local'
             # there must be a better way to do this, but for the moment we compare
-            # (stringwise) and indicies that involve a global tag, and ensure that
+            # (stringwise) any indicies that involve a global tag, and ensure that
             # they are identical on the left and right hand sides
             # if they are, this is a local atomic
             from six import iteritems
@@ -595,9 +595,10 @@ class ISPCASTBuilder(CASTBuilder):
                 for ind in rhs_inds:
                     if any(tag.search(ind) for tag in gtags) and ind != lhs_ind:
                         var_kind = '_global'
-                        break
+                        raise NotImplementedError('Global atomics require user-based'
+                            'memory barrier specification.')
 
-            func_name = "atomic_swap%s" % var_kind
+            func_name = "atomic_compare_exchange%s" % var_kind
 
             return Block([
                 POD(self, NumpyType(lhs_dtype.dtype, target=self.target),
@@ -607,6 +608,7 @@ class ISPCASTBuilder(CASTBuilder):
                 DoWhile(
                     "%(func_name)s("
                     "&%(lhs_expr)s, "
+                    "%(old_val)s, "
                     "%(new_val)s"
                     ") != %(old_val)s"
                     % {

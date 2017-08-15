@@ -40,17 +40,17 @@ else:
 
 def test_ispc_target():
     knl = lp.make_kernel(
-            "{ [i]: 0<=i<n }",
-            "out[i] = 2*a[i]",
-            [
-                lp.GlobalArg("out", np.float32, shape=lp.auto),
-                lp.GlobalArg("a", np.float32, shape=lp.auto),
-                "..."
-                ],
-            target=ISPCTarget())
+        "{ [i]: 0<=i<n }",
+        "out[i] = 2*a[i]",
+        [
+            lp.GlobalArg("out", np.float32, shape=lp.auto),
+            lp.GlobalArg("a", np.float32, shape=lp.auto),
+            "..."
+        ],
+        target=ISPCTarget())
 
     assert np.allclose(knl(a=np.arange(16, dtype=np.float32))[1],
-                2 * np.arange(16, dtype=np.float32))
+                       2 * np.arange(16, dtype=np.float32))
 
 
 def test_ispc_target_strides():
@@ -58,14 +58,16 @@ def test_ispc_target_strides():
 
     def __get_kernel(order='C'):
         return lp.make_kernel(
-                "{ [i,j]: 0<=i,j<n }",
-                "out[i, j] = 2*a[i, j]",
-                [
-                    lp.GlobalArg("out", np.float32, shape=('n', 'n'), order=order),
-                    lp.GlobalArg("a", np.float32, shape=('n', 'n'), order=order),
-                    "..."
-                    ],
-                target=ISPCTarget())
+            "{ [i,j]: 0<=i,j<n }",
+            "out[i, j] = 2*a[i, j]",
+            [
+                lp.GlobalArg(
+                    "out", np.float32, shape=('n', 'n'), order=order),
+                lp.GlobalArg(
+                    "a", np.float32, shape=('n', 'n'), order=order),
+                "..."
+            ],
+            target=ISPCTarget())
 
     # test with C-order
     knl = __get_kernel('C')
@@ -73,7 +75,7 @@ def test_ispc_target_strides():
                       order='C')
 
     assert np.allclose(knl(a=a_np)[1],
-                2 * a_np)
+                       2 * a_np)
 
     # test with F-order
     knl = __get_kernel('F')
@@ -81,7 +83,7 @@ def test_ispc_target_strides():
                       order='F')
 
     assert np.allclose(knl(a=a_np)[1],
-                2 * a_np)
+                       2 * a_np)
 
 
 def test_ispc_target_strides_nonsquare():
@@ -98,14 +100,14 @@ def test_ispc_target_strides_nonsquare():
         statement = 'out[{indexed}] = 2 * a[{indexed}]'.format(
             indexed=', '.join(indicies))
         return lp.make_kernel(
-                domains,
-                statement,
-                [
-                    lp.GlobalArg("out", np.float32, shape=sizes, order=order),
-                    lp.GlobalArg("a", np.float32, shape=sizes, order=order),
-                    "..."
-                    ],
-                target=ISPCTarget())
+            domains,
+            statement,
+            [
+                lp.GlobalArg("out", np.float32, shape=sizes, order=order),
+                lp.GlobalArg("a", np.float32, shape=sizes, order=order),
+                "..."
+            ],
+            target=ISPCTarget())
 
     # test with C-order
     knl = __get_kernel('C')
@@ -115,7 +117,7 @@ def test_ispc_target_strides_nonsquare():
                       order='C')
 
     assert np.allclose(knl(a=a_np)[1],
-                2 * a_np)
+                       2 * a_np)
 
     # test with F-order
     knl = __get_kernel('F')
@@ -125,7 +127,7 @@ def test_ispc_target_strides_nonsquare():
                       order='F')
 
     assert np.allclose(knl(a=a_np)[1],
-                2 * a_np)
+                       2 * a_np)
 
 
 def test_ispc_optimizations():
@@ -142,14 +144,14 @@ def test_ispc_optimizations():
         statement = 'out[{indexed}] = 2 * a[{indexed}]'.format(
             indexed=', '.join(indicies))
         return lp.make_kernel(
-                domains,
-                statement,
-                [
-                    lp.GlobalArg("out", np.float32, shape=sizes, order=order),
-                    lp.GlobalArg("a", np.float32, shape=sizes, order=order),
-                    "..."
-                    ],
-                target=ISPCTarget()), sizes
+            domains,
+            statement,
+            [
+                lp.GlobalArg("out", np.float32, shape=sizes, order=order),
+                lp.GlobalArg("a", np.float32, shape=sizes, order=order),
+                "..."
+            ],
+            target=ISPCTarget()), sizes
 
     # test with ILP
     knl, sizes = __get_kernel('C')
@@ -189,13 +191,13 @@ def test_ispc_vector_sizes_and_targets(vec_width, target, n):
     target = ISPCTarget(compiler=compiler)
 
     knl = lp.make_kernel(
-            '{[i]: 0<=i<n}',
-            """
+        '{[i]: 0<=i<n}',
+        """
             out[i] = 2 * a[i]
             """,
-            [lp.GlobalArg("a", shape=(n,)),
-             lp.GlobalArg("out", shape=(n,))],
-            target=target)
+        [lp.GlobalArg("a", shape=(n,)),
+         lp.GlobalArg("out", shape=(n,))],
+        target=target)
 
     knl = lp.fix_parameters(knl, n=n)
 
@@ -212,29 +214,34 @@ def test_ispc_vector_sizes_and_targets(vec_width, target, n):
 @pytest.mark.parametrize("atomic_type", ['l.0', 'g.0'])
 def test_atomic(dtype, atomic_type):
     lp.set_caching_enabled(False)
-    indicies = ['i', 'j']
-    sizes = tuple(np.random.randint(1, 51, size=len(indicies)))
-    # create domain strings
-    domain_template = '{{ [{iname}]: 0 <= {iname} < {size} }}'
-    domains = []
-    for idx, size in zip(indicies, sizes):
-        domains.append(domain_template.format(
-            iname=idx,
-            size=size))
-    statement = 'out[i] = out[i] + 2 * a[i, j]'
+    m = 20
+    n = 10000
     knl = lp.make_kernel(
-            domains,
-            statement,
-            [
-                lp.GlobalArg("out", dtype, shape=(sizes[0],)),
-                lp.GlobalArg("a", dtype, shape=lp.auto)
-                ],
-            target=ISPCTarget())
+        "{ [i]: 0<=i<n }",
+        """
+            <> ind = indexer[i]
+            out[ind] = out[ind] + 2 * a[i] {atomic}
+        """,
+        [
+            lp.GlobalArg("out", dtype, shape=(m,), for_atomic=True),
+            lp.GlobalArg("a", dtype, shape=(n,)),
+            lp.GlobalArg("indexer", dtype=np.int32, shape=(n,))
+        ],
+        target=ISPCTarget(),
+        assumptions="n>0")
 
     # create base array
-    a = np.reshape(np.arange(np.product(sizes), dtype=dtype), sizes)
-    out = np.sum(2 * a, axis=1, dtype=dtype)
+    a = np.arange(n, dtype=dtype)
+    indexer = (a % m).astype(dtype=np.int32)
+    out = np.zeros((m,), dtype=dtype)
+    for i in range(n):
+        out[indexer[i]] += 2 * a[i]
 
+    knl = lp.fix_parameters(knl, n=n)
     knl = lp.split_iname(knl, "i", 8, inner_tag=atomic_type)
-    _, test = knl(a=a, out=np.zeros_like(out))
-    assert np.allclose(test[0], out)
+    try:
+        _, test = knl(a=a, out=np.zeros_like(out), indexer=indexer.copy())
+        assert np.allclose(test[0], out)
+    except NotImplementedError:
+        assert atomic_type == 'g.0'
+        pytest.xfail('Global atomics not implemented')

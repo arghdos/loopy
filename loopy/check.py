@@ -484,9 +484,10 @@ def check_that_atomic_ops_are_used_exactly_on_atomic_arrays(kernel):
         if not isinstance(insn, Assignment):
             continue
 
-        atomic_accesses = set(a.var_name for a in insn.atomicity
-                              if not isinstance(a, NonAtomic))
-        if not atomic_accesses <= atomicity_candidates:
+        atomic_accesses = set(a.var_name for a in insn.atomicity)
+        fake_atomic_accesses = set(a.var_name for a in insn.atomicity
+                                   if isinstance(a, NonAtomic))
+        if not (atomic_accesses - fake_atomic_accesses) <= atomicity_candidates:
             raise LoopyError("atomic access in instruction '%s' to "
                     "non-atomic variable(s) '%s'"
                     % (insn.id,

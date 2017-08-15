@@ -1051,6 +1051,21 @@ def test_mixed_atomic(ctx_factory):
     lp.auto_test_vs_ref(ref_knl, ctx, knl, parameters=dict(n=512))
 
 
+def test_non_atomic_alone():
+    knl = lp.make_kernel(
+            "{ [i]: 0<=i<n }",
+            """
+                out[i] = i {atomic=none}
+            """,
+            [
+                lp.GlobalArg("out", np.int32, shape=lp.auto),
+                "..."
+                ],
+            assumptions="n>0")
+
+    print(lp.generate_code(knl)[0])
+
+
 def test_within_inames_and_reduction():
     # See https://github.com/inducer/loopy/issues/24
 

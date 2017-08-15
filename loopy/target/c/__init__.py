@@ -625,12 +625,12 @@ class CASTBuilder(ASTBuilderBase):
         else:
             lhs_atomicity = None
 
-        from loopy.kernel.data import AtomicInit, AtomicUpdate
+        from loopy.kernel.data import AtomicInit, AtomicUpdate, NonAtomic
         from loopy.expression import dtype_to_type_context
 
         lhs_code = ecm(insn.assignee, prec=PREC_NONE, type_context=None)
         rhs_type_context = dtype_to_type_context(kernel.target, lhs_dtype)
-        if lhs_atomicity is None:
+        if lhs_atomicity is None or isinstance(lhs_atomicity, NonAtomic):
             from cgen import Assign
             return Assign(
                     lhs_code,

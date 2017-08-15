@@ -1011,6 +1011,46 @@ def test_atomic(ctx_factory, dtype):
     lp.auto_test_vs_ref(ref_knl, ctx, knl, parameters=dict(n=10000))
 
 
+def test_mixed_atomic(ctx_factory):
+    ctx = ctx_factory()
+    dtype = np.int32
+
+    if (
+            np.dtype(dtype).itemsize == 8
+            and "cl_khr_int64_base_atomics" not in ctx.devices[0].extensions):
+        pytest.skip("64-bit atomics not supported on device")
+
+    import pyopencl.version  # noqa
+    if (
+            cl.version.VERSION < (2015, 2)
+            and dtype == np.int64):
+        pytest.skip("int64 RNG not supported in PyOpenCL < 2015.2")
+
+    knl = lp.make_kernel(
+            "{ [i, j]: 0<=i,j<n }",
+            """
+            for i
+                <> sum = 0
+                for j
+                    sum = sum + a[j] {id=update}
+                    out[i, j] = out[i, j] + 2*a[j] {atomic=none}
+                end
+                out[0, n] = out[0, n] + sum - n {atomic, dep=update,\
+                                                 nosync=update}
+            end
+            """,
+            [
+                lp.GlobalArg("out", dtype, shape=lp.auto, for_atomic=True),
+                lp.GlobalArg("a", dtype, shape=lp.auto),
+                "..."
+                ],
+            assumptions="n>0")
+
+    ref_knl = knl
+    knl = lp.split_iname(knl, "i", 512, outer_tag="g.0")
+    lp.auto_test_vs_ref(ref_knl, ctx, knl, parameters=dict(n=512))
+
+
 def test_within_inames_and_reduction():
     # See https://github.com/inducer/loopy/issues/24
 

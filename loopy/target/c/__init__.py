@@ -656,6 +656,10 @@ class CASTBuilder(ASTBuilderBase):
             lhs_expr, rhs_expr, lhs_dtype):
         raise NotImplementedError("atomic updates in %s" % type(self).__name__)
 
+    def emit_atomic_init(self, codegen_state, lhs_atomicity, lhs_var,
+            lhs_expr, rhs_expr, lhs_dtype):
+        raise NotImplementedError("atomic inits in %s" % type(self).__name__)
+
     def emit_tuple_assignment(self, codegen_state, insn):
         ecm = codegen_state.expression_to_code_mapper
 

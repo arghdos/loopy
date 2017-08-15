@@ -213,8 +213,7 @@ def test_ispc_vector_sizes_and_targets(vec_width, target, n):
 @pytest.mark.parametrize("dtype", [np.int32, np.int64, np.float32, np.float64])
 @pytest.mark.parametrize("atomic_type", ['l.0', 'g.0'])
 def test_atomic(dtype, atomic_type):
-    lp.set_caching_enabled(False)
-    m = 20
+    m = 4
     n = 10000
     knl = lp.make_kernel(
         "{ [i]: 0<=i<n }",
@@ -242,6 +241,42 @@ def test_atomic(dtype, atomic_type):
     try:
         _, test = knl(a=a, out=np.zeros_like(out), indexer=indexer.copy())
         assert np.allclose(test[0], out)
+    except NotImplementedError:
+        assert atomic_type == 'g.0'
+        pytest.xfail('Global atomics not implemented')
+
+
+def test_atomic_init():
+    lp.set_caching_enabled(False)
+    dtype = np.int32
+    atomic_type = 'l.0'
+    m = 4
+    n = 10000
+    knl = lp.make_kernel(
+        "{ [i]: 0<=i<n }",
+        """
+            <> ind = indexer[i]
+            out[ind] = i {id=init, atomic}
+        """,
+        [
+            lp.GlobalArg("out", dtype, shape=(m,), for_atomic=True),
+            lp.GlobalArg("indexer", dtype=np.int32, shape=(n,))
+        ],
+        target=ISPCTarget(),
+        assumptions="n>0")
+
+    # create base array
+    a = np.arange(n, dtype=dtype)
+    indexer = (a % m).astype(dtype=np.int32)
+    out = np.zeros((m,), dtype=dtype)
+
+    knl = lp.fix_parameters(knl, n=n)
+    knl = lp.split_iname(knl, "i", 8, inner_tag=atomic_type)
+    knl = knl.copy(silenced_warnings=['write_race(init)'])
+
+    try:
+        _, test = knl(out=np.zeros_like(out), indexer=indexer.copy())
+        assert np.allclose(indexer[test], np.arange(m))
     except NotImplementedError:
         assert atomic_type == 'g.0'
         pytest.xfail('Global atomics not implemented')

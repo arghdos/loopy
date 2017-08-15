@@ -408,7 +408,11 @@ class ISPCASTBuilder(CASTBuilder):
                         needed_dtype=lhs_dtype))
 
         elif isinstance(lhs_atomicity, AtomicInit):
-            raise NotImplementedError("atomic init")
+            codegen_state.seen_atomic_dtypes.add(lhs_dtype)
+            return codegen_state.ast_builder.emit_atomic_init(
+                    codegen_state, lhs_atomicity, lhs_var,
+                    insn.assignee, insn.expression,
+                    lhs_dtype, rhs_type_context)
 
         elif isinstance(lhs_atomicity, AtomicUpdate):
             codegen_state.seen_atomic_dtypes.add(lhs_dtype)
@@ -536,6 +540,13 @@ class ISPCASTBuilder(CASTBuilder):
                     PREC_NONE, "i"),
                 "++%s" % iname,
                 inner)
+    # }}}
+
+    # {{{ code generation for atomic init
+
+    def emit_atomic_init(self, *args):
+        return self.emit_atomic_update(*args)
+
     # }}}
 
     # {{{ code generation for atomic update

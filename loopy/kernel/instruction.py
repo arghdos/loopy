@@ -583,6 +583,15 @@ class VarAtomicity(object):
         return not self.__eq__(other)
 
 
+class NonAtomic(VarAtomicity):
+    """Describes use of an atomic variable in a non-atomic manner. A subclass of
+    :class:`VarAtomicity`.
+    """
+
+    def __str__(self):
+        return "nonatomic[%s]" % self.var_name
+
+
 class AtomicInit(VarAtomicity):
     """Describes initialization of an atomic variable. A subclass of
     :class:`VarAtomicity`.

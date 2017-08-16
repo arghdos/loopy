@@ -274,9 +274,37 @@ def test_atomic_init():
     knl = lp.split_iname(knl, "i", 8, inner_tag=atomic_type)
     knl = knl.copy(silenced_warnings=['write_race(init)'])
 
-    try:
-        _, test = knl(out=np.zeros_like(out), indexer=indexer.copy())
-        assert np.allclose(indexer[test], np.arange(m))
-    except NotImplementedError:
-        assert atomic_type == 'g.0'
-        pytest.xfail('Global atomics not implemented')
+    _, test = knl(out=np.zeros_like(out), indexer=indexer.copy())
+    assert np.allclose(indexer[test], np.arange(m))
+
+
+@pytest.mark.parametrize(
+    ('op_str', 'op_name'),
+    [('+', 'atomic_add'), ('and', 'atomic_and'), ('or', 'atomic_or')])
+def test_atomic_ops(op_str, op_name):
+    lp.set_caching_enabled(False)
+    dtype = np.int32
+    atomic_type = 'l.0'
+    m = 4
+    n = 10000
+    knl = lp.make_kernel(
+        "{ [i]: 0<=i<n }",
+        """
+            <> ind = indexer[i]
+            out[ind] = out[ind] %(op)s 2 * a[i] {id=set, atomic}
+        """ % {'op': op_str},
+        [
+            lp.GlobalArg("out", dtype=dtype, shape=(m,), for_atomic=True),
+            lp.GlobalArg("a", dtype=dtype, shape=(n,)),
+            lp.GlobalArg("indexer", dtype=dtype, shape=(n,))
+        ],
+        target=ISPCTarget(),
+        assumptions="n>0")
+
+    # create code
+    knl = lp.fix_parameters(knl, n=n)
+    knl = lp.split_iname(knl, "i", 8, inner_tag=atomic_type)
+    knl = knl.copy(silenced_warnings=['write_race(set)'])
+
+    code = lp.generate_code(knl)[0]
+    assert op_name in code

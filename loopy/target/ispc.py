@@ -542,27 +542,98 @@ class ISPCASTBuilder(CASTBuilder):
                 inner)
     # }}}
 
-    # {{{ code generation for atomic init
+    def _atomic_is_global(self, codegen_state, lhs_expr, rhs_expr):
+        # there must be a better way to do this, but for the moment we compare
+        # (stringwise) any indicies that involve a global tag, and ensure that
+        # they are identical on the left and right hand sides
+        # if they are, this is a local atomic
+        from six import iteritems
+        from loopy.kernel.data import GroupIndexTag
+        import re
+        gtags = set(re.compile(r'\b' + name + r'\b')
+            for name, tag in iteritems(
+            codegen_state.kernel.iname_to_tag)
+                    if isinstance(tag, GroupIndexTag))
 
-    def emit_atomic_init(self, *args):
-        return self.emit_atomic_update(*args)
+        var_kind = '_local'
+        index_extractor = re.compile(r'\[([^\]]+)\]')
 
-    # }}}
+        # find the LHS indexing strings
+        lhs_ind = index_extractor.search(str(lhs_expr)).groups()
+        if lhs_ind:
+            lhs_ind = lhs_ind[0]
+            # split the LHS by comma's if possible
+            lhs_ind = [x.strip() for x in lhs_ind.split(',') if x.strip()]
+            # now filter to find only those that have a global tag
+            lhs_ind = [x for x in lhs_ind if any(tag.search(x) for tag in gtags)]
 
-    # {{{ code generation for atomic update
+            # repeat for the RHS indexs
+            rhs_inds = index_extractor.findall(str(rhs_expr))
+            rhs_inds = [x.strip() for y in rhs_inds for x in y.split(',')
+                        if x.strip()]
+            # filter
+            rhs_inds = [x for x in rhs_inds if any(tag.search(x) for tag in gtags)]
 
-    def emit_atomic_update(self, codegen_state, lhs_atomicity, lhs_var,
-            lhs_expr, rhs_expr, lhs_dtype, rhs_type_context):
+            # find any that are not on lhs
+            if [x for x in rhs_inds if x not in lhs_ind]:
+                var_kind = '_global'
+                # Once you get to global atomics, several common parameter
+                # patterns simply don't exist.  It will require some thought
+                # on how best to handle it.
+
+                # For the moment, it's safer to just raise an exception
+                raise NotImplementedError('Global atomics are not fully'
+                    ' implemented for ISPC.')
+
+        return var_kind
+
+    # {{{ code generation for emitting a generatic atomic operations
+
+    def _emit_atomic_operation(self, codegen_state, lhs_atomicity, lhs_var,
+            lhs_expr, rhs_expr, lhs_dtype, rhs_type_context, func_name,
+            need_loop=True):
         from pymbolic.mapper.stringifier import PREC_NONE
         from loopy.types import NumpyType
 
-        # FIXME: Could detect operations, generate atomic_{add,...} when
-        # appropriate.
+        kind = self._atomic_is_global(codegen_state, lhs_expr, rhs_expr)
+        func_name = '%(func_name)s%(kind)s' % {
+            'func_name': func_name,
+            'kind': kind
+        }
 
         if isinstance(lhs_dtype, NumpyType) and lhs_dtype.numpy_dtype in [
                 np.int32, np.int64, np.float32, np.float64]:
-            from cgen import Block, DoWhile, Assign
+            from cgen import Block, DoWhile, Assign, Statement
             from loopy.target.c import POD
+            from pymbolic.mapper.substitutor import make_subst_func
+            from pymbolic import var
+            from loopy.symbolic import SubstitutionMapper
+
+            if not need_loop:
+                # first, get a copy of the rhs_expr with the lhs_expr removed
+                # (if there)
+                ecm = codegen_state.expression_to_code_mapper
+
+                # get lhs
+                lhs_expr_code = ecm(lhs_expr, prec=PREC_NONE, type_context=None)
+
+                # sub 0 for lhs in rhs
+                subst = SubstitutionMapper(
+                        make_subst_func({lhs_expr: 0}))
+                rhs_expr_code = ecm(subst(rhs_expr), prec=PREC_NONE,
+                        type_context=rhs_type_context,
+                        needed_dtype=lhs_dtype)
+
+                return Statement(
+                    "%(func_name)s("
+                    "&%(lhs_expr)s, "
+                    "%(rhs_expr)s)" % {
+                        'func_name': func_name,
+                        'lhs_expr': lhs_expr_code,
+                        'rhs_expr': rhs_expr_code,
+                    })
+
+            # otherwise, we need to do the general loop form of this
             old_val_var = codegen_state.var_name_generator("loopy_old_val")
             new_val_var = codegen_state.var_name_generator("loopy_new_val")
 
@@ -575,41 +646,11 @@ class ISPCASTBuilder(CASTBuilder):
 
             lhs_expr_code = ecm(lhs_expr, prec=PREC_NONE, type_context=None)
 
-            from pymbolic.mapper.substitutor import make_subst_func
-            from pymbolic import var
-            from loopy.symbolic import SubstitutionMapper
-
             subst = SubstitutionMapper(
                     make_subst_func({lhs_expr: var(old_val_var)}))
             rhs_expr_code = ecm(subst(rhs_expr), prec=PREC_NONE,
                     type_context=rhs_type_context,
                     needed_dtype=lhs_dtype)
-
-            var_kind = '_local'
-            # there must be a better way to do this, but for the moment we compare
-            # (stringwise) any indicies that involve a global tag, and ensure that
-            # they are identical on the left and right hand sides
-            # if they are, this is a local atomic
-            from six import iteritems
-            from loopy.kernel.data import GroupIndexTag
-            import re
-            gtags = set(re.compile(r'\b' + name + r'\b')
-                for name, tag in iteritems(
-                codegen_state.kernel.iname_to_tag)
-                        if isinstance(tag, GroupIndexTag))
-            index_extractor = re.compile(r'\[([^\]]+)\]')
-            lhs_ind = index_extractor.search(str(lhs_expr)).groups()
-            if lhs_ind:
-                lhs_ind = lhs_ind[0]
-                rhs_inds = index_extractor.findall(str(rhs_expr))
-
-                for ind in rhs_inds:
-                    if any(tag.search(ind) for tag in gtags) and ind != lhs_ind:
-                        var_kind = '_global'
-                        raise NotImplementedError('Global atomics require user-based'
-                            'memory barrier specification.')
-
-            func_name = "atomic_compare_exchange%s" % var_kind
 
             return Block([
                 POD(self, NumpyType(lhs_dtype.dtype, target=self.target),
@@ -636,6 +677,58 @@ class ISPCASTBuilder(CASTBuilder):
                 ])
         else:
             raise NotImplementedError("atomic update for '%s'" % lhs_dtype)
+
+    # }}}
+
+    # {{{ code generation for atomic init
+
+    def emit_atomic_init(self, codegen_state, lhs_atomicity, lhs_var,
+            lhs_expr, rhs_expr, lhs_dtype, rhs_type_context):
+        return self._emit_atomic_operation(codegen_state, lhs_atomicity, lhs_var,
+            lhs_expr, rhs_expr, lhs_dtype, rhs_type_context, 'atomic_swap',
+            need_loop=False)
+
+    # }}}
+
+    def _get_atomic_func_name(self, lhs_expr, rhs_expr):
+        # first, we search for the lhs_expr in the rhs_expr
+        from pymbolic.primitives import Sum, LogicalAnd, LogicalOr
+        try:
+            # if it's a simple product / sum / quotient, and we can find
+            # LHS in the children
+            contains = any(x == lhs_expr for x in rhs_expr.children)
+        except AttributeError:
+            # otherwise, we need a complex atomic
+            return None
+
+        # not a simple atomic
+        if not contains:
+            return None
+
+        if isinstance(rhs_expr, Sum):
+            return 'atomic_add'
+        elif isinstance(rhs_expr, LogicalAnd):
+            return 'atomic_and'
+        elif isinstance(rhs_expr, LogicalOr):
+            return 'atomic_or'
+
+        # not found
+        return None
+
+    # {{{ code generation for atomic update
+
+    def emit_atomic_update(self, codegen_state, lhs_atomicity, lhs_var,
+            lhs_expr, rhs_expr, lhs_dtype, rhs_type_context):
+        # find appropriate function name if possible
+        func_name = self._get_atomic_func_name(lhs_expr, rhs_expr)
+        need_loop = False
+        if func_name is None:
+            func_name = 'atomic_compare_exchange'
+            need_loop = True
+
+        return self._emit_atomic_operation(codegen_state, lhs_atomicity, lhs_var,
+            lhs_expr, rhs_expr, lhs_dtype, rhs_type_context, func_name=func_name,
+            need_loop=need_loop)
 
     # }}}
 

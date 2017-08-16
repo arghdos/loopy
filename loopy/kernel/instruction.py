@@ -597,10 +597,8 @@ class AtomicInit(VarAtomicity):
         key_builder.rec(key_hash, "AtomicInit")
 
     def __str__(self):
-        return "update[%s]%s/%s" % (
-                self.var_name,
-                memory_ordering.to_string(self.ordering),
-                memory_scope.to_string(self.scope))
+        return "init[%s]" % (
+                self.var_name)
 
 
 class AtomicUpdate(VarAtomicity):

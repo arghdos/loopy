@@ -489,7 +489,7 @@ def check_for_unused_hw_axes_in_insns(kernel):
 # {{{ check that atomic ops are used exactly on atomic arrays
 
 def check_that_atomic_ops_are_used_exactly_on_atomic_arrays(kernel):
-    from loopy.kernel.data import ArrayBase, Assignment, NonAtomic
+    from loopy.kernel.data import ArrayBase, Assignment
     from loopy.types import AtomicType
     atomicity_candidates = (
             set(v.name for v in six.itervalues(kernel.temporary_variables)
@@ -504,9 +504,7 @@ def check_that_atomic_ops_are_used_exactly_on_atomic_arrays(kernel):
             continue
 
         atomic_accesses = set(a.var_name for a in insn.atomicity)
-        fake_atomic_accesses = set(a.var_name for a in insn.atomicity
-                                   if isinstance(a, NonAtomic))
-        if not (atomic_accesses - fake_atomic_accesses) <= atomicity_candidates:
+        if not atomic_accesses <= atomicity_candidates:
             raise LoopyError("atomic access in instruction '%s' to "
                     "non-atomic variable(s) '%s'"
                     % (insn.id,

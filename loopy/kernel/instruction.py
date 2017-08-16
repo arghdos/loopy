@@ -594,15 +594,6 @@ class VarAtomicity(object):
                 memory_scope.to_string(self.scope))
 
 
-class NonAtomic(VarAtomicity):
-    """Describes use of an atomic variable in a non-atomic manner. A subclass of
-    :class:`VarAtomicity`.
-    """
-
-    def __str__(self):
-        return "nonatomic[%s]" % self.var_name
-
-
 class AtomicInit(VarAtomicity):
     """Describes initialization of an atomic variable. A subclass of
     :class:`VarAtomicity`.

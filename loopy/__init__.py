@@ -38,7 +38,6 @@ from loopy.library.function import (
 
 from loopy.kernel.instruction import (
         memory_ordering, memory_scope, VarAtomicity, AtomicInit, AtomicUpdate,
-        NonAtomic,
         InstructionBase,
         MultiAssignmentBase, Assignment, ExpressionInstruction,
         CallInstruction, CInstruction, NoOpInstruction, BarrierInstruction)
@@ -153,7 +152,7 @@ __all__ = [
         "LoopKernel", "kernel_state",
 
         "memory_ordering", "memory_scope", "VarAtomicity",
-        "AtomicInit", "AtomicUpdate", "NonAtomic",
+        "AtomicInit", "AtomicUpdate",
         "InstructionBase",
         "MultiAssignmentBase", "Assignment", "ExpressionInstruction",
         "CallInstruction", "CInstruction", "NoOpInstruction",

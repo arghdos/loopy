@@ -346,9 +346,6 @@ def parse_insn_options(opt_dict, options_str, assignee_names=None):
                     if v == "init":
                         result["atomicity"] = result["atomicity"] + (
                                 lp.AtomicInit(assignee_name),)
-                    elif v == "none":
-                        result["atomicity"] = result["atomicity"] + (
-                                lp.NonAtomic(assignee_name),)
                     else:
                         raise LoopyError("atomicity directive not "
                                 "understood: %s"

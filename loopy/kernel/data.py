@@ -37,7 +37,6 @@ from loopy.kernel.instruction import (  # noqa
         VarAtomicity,
         AtomicInit,
         AtomicUpdate,
-        NonAtomic,
         MultiAssignmentBase,
         Assignment,
         ExpressionInstruction,

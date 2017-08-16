@@ -247,7 +247,6 @@ def test_atomic(dtype, atomic_type):
 
 
 def test_atomic_init():
-    lp.set_caching_enabled(False)
     dtype = np.int32
     atomic_type = 'l.0'
     m = 4
@@ -255,8 +254,8 @@ def test_atomic_init():
     knl = lp.make_kernel(
         "{ [i]: 0<=i<n }",
         """
-            <> ind = indexer[i]
-            out[ind] = i {id=init, atomic}
+            <>ind = indexer[i]
+            out[ind] = i {id=init, atomic=init}
         """,
         [
             lp.GlobalArg("out", dtype, shape=(m,), for_atomic=True),
@@ -282,7 +281,6 @@ def test_atomic_init():
     ('op_str', 'op_name'),
     [('+', 'atomic_add'), ('and', 'atomic_and'), ('or', 'atomic_or')])
 def test_atomic_ops(op_str, op_name):
-    lp.set_caching_enabled(False)
     dtype = np.int32
     atomic_type = 'l.0'
     m = 4

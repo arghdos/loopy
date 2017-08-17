@@ -277,32 +277,55 @@ def test_atomic_init():
     assert np.allclose(indexer[test], np.arange(m))
 
 
-@pytest.mark.parametrize(
-    ('op_str', 'op_name'),
-    [('+', 'atomic_add'), ('and', 'atomic_and'), ('or', 'atomic_or')])
-def test_atomic_ops(op_str, op_name):
+@pytest.mark.parametrize('atomic_type', ['varying', 'uniform'])
+def test_uniform_atomics(atomic_type):
     dtype = np.int32
-    atomic_type = 'l.0'
     m = 4
     n = 10000
     knl = lp.make_kernel(
-        "{ [i]: 0<=i<n }",
+        "{ [i,j]: 0<=i,j<n }",
         """
-            <> ind = indexer[i]
-            out[ind] = out[ind] %(op)s 2 * a[i] {id=set, atomic}
-        """ % {'op': op_str},
+        for j
+            <> upper = n
+            <> lower = 0
+            for i
+                upper = upper - i {id=sum0}
+                lower = lower + i * i {id=sum1}
+            end
+            out[%(index)s] = out[%(index)s] + \
+                %(val)s {id=set, dep=sum*, atomic%(atype)s}
+        end
+        """ % {'atype': '' if atomic_type == 'varying' else '=uniform',
+               'index': 'indexer[j]' if atomic_type == 'varying' else '0',
+               'val': 'upper / lower' if atomic_type == 'varying' else '1'},
         [
             lp.GlobalArg("out", dtype=dtype, shape=(m,), for_atomic=True),
-            lp.GlobalArg("a", dtype=dtype, shape=(n,)),
             lp.GlobalArg("indexer", dtype=dtype, shape=(n,))
         ],
         target=ISPCTarget(),
         assumptions="n>0")
 
-    # create code
+    # create base array
+    a = np.arange(n, dtype=dtype)
+    indexer = (a % m).astype(dtype=np.int32)
+    out = np.zeros((m,), dtype=dtype)
+
     knl = lp.fix_parameters(knl, n=n)
-    knl = lp.split_iname(knl, "i", 8, inner_tag=atomic_type)
+    knl = lp.split_iname(knl, "j", 8, inner_tag='l.0')
     knl = knl.copy(silenced_warnings=['write_race(set)'])
 
-    code = lp.generate_code(knl)[0]
-    assert op_name in code
+    _, test = knl(out=np.zeros_like(out), indexer=indexer.copy())
+    # get the answer
+    # each i sum
+    i_sum = 6 * (n - 0.5 * n * (n + 1)) / (n * (n + 1) * (2 * n + 1))
+    ref = np.zeros_like(out)
+    if atomic_type == 'varying':
+        # for the varying type, each j will add to the appropriate out
+        for i in range(m):
+            ref[i] = np.where(indexer == i)[0].size * i_sum
+    else:
+        # for the uniform atomic, the program will only perform one atomic update
+        # hence
+        ref[0] = np.ceil(n / 8.0)
+
+    assert np.allclose(test, ref)

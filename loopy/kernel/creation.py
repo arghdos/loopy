@@ -338,14 +338,24 @@ def parse_insn_options(opt_dict, options_str, assignee_names=None):
             assignee_name, = assignee_names
 
             import loopy as lp
+
+            # check for uniform flag for ispc
+            args = {'uniform': False}
+            opt_value = opt_value.split(":") if opt_value is not None else None
+            if opt_value is not None and 'uniform' in opt_value:
+                args['uniform'] = True
+                opt_value = [x for x in opt_value if x != 'uniform']
+                if not opt_value:
+                    opt_value = None
+
             if opt_value is None:
                 result["atomicity"] = result["atomicity"] + (
-                        lp.AtomicUpdate(assignee_name),)
+                        lp.AtomicUpdate(assignee_name, **args),)
             else:
-                for v in opt_value.split(":"):
+                for v in opt_value:
                     if v == "init":
                         result["atomicity"] = result["atomicity"] + (
-                                lp.AtomicInit(assignee_name),)
+                                lp.AtomicInit(assignee_name, **args),)
                     else:
                         raise LoopyError("atomicity directive not "
                                 "understood: %s"

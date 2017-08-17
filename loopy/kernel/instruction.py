@@ -563,10 +563,16 @@ class VarAtomicity(object):
     shall proceed.
 
     .. attribute:: var_name
+
+    .. attribute:: uniform
+
+        For ISPC targets, this indicates that a uniform atomic operation should be
+        used, thus the operator will be cast to a uniform int etc.
     """
 
-    def __init__(self, var_name):
+    def __init__(self, var_name, uniform=False):
         self.var_name = var_name
+        self.uniform = uniform
 
     def update_persistent_hash(self, key_hash, key_builder):
         """Custom hash computation function for use with

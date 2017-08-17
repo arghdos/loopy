@@ -600,6 +600,7 @@ class ISPCASTBuilder(CASTBuilder):
             'func_name': func_name,
             'kind': kind
         }
+        uniform = lhs_atomicity.uniform
 
         if isinstance(lhs_dtype, NumpyType) and lhs_dtype.numpy_dtype in [
                 np.int32, np.int64, np.float32, np.float64]:
@@ -608,6 +609,13 @@ class ISPCASTBuilder(CASTBuilder):
             from pymbolic.mapper.substitutor import make_subst_func
             from pymbolic import var
             from loopy.symbolic import SubstitutionMapper
+
+            # get the casting for the RHS
+            casting_str = '(%(type)s %(dtype)s)' % {
+                'type': 'uniform' if uniform else 'varying',
+                'dtype': codegen_state.kernel.target.get_dtype_registry(
+                    ).dtype_to_ctype(lhs_dtype)
+            }
 
             if not need_loop:
                 # first, get a copy of the rhs_expr with the lhs_expr removed
@@ -627,10 +635,11 @@ class ISPCASTBuilder(CASTBuilder):
                 return Statement(
                     "%(func_name)s("
                     "&%(lhs_expr)s, "
-                    "%(rhs_expr)s)" % {
+                    "%(cast)s (%(rhs_expr)s))" % {
                         'func_name': func_name,
                         'lhs_expr': lhs_expr_code,
                         'rhs_expr': rhs_expr_code,
+                        'cast': casting_str
                     })
 
             # otherwise, we need to do the general loop form of this
@@ -661,13 +670,14 @@ class ISPCASTBuilder(CASTBuilder):
                     "%(func_name)s("
                     "&%(lhs_expr)s, "
                     "%(old_val)s, "
-                    "%(new_val)s"
+                    "%(cast)s (%(new_val)s)"
                     ") != %(old_val)s"
                     % {
                         "func_name": func_name,
                         "lhs_expr": lhs_expr_code,
                         "old_val": old_val_var,
                         "new_val": new_val_var,
+                        "cast": casting_str
                         },
                     Block([
                         Assign(old_val_var, lhs_expr_code),

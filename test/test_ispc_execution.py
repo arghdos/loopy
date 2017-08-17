@@ -329,3 +329,25 @@ def test_uniform_atomics(atomic_type):
         ref[0] = np.ceil(n / 8.0)
 
     assert np.allclose(test, ref)
+
+
+def test_temporary_duplication_remover():
+    dtype = np.int32
+    m = 10
+    from loopy.kernel.data import temp_var_scope
+    knl = lp.make_kernel(
+        "{ [i]: 0<=i<10 }",
+        """
+        out[i] = 2.0 * a[i]
+        """,
+        [
+            lp.GlobalArg("out", dtype, shape=(m,)),
+            lp.TemporaryVariable("a", dtype=dtype, shape=(m,),
+                                 initializer=np.arange(m, dtype=dtype),
+                                 read_only=True, scope=temp_var_scope.GLOBAL)
+        ],
+        target=ISPCTarget())
+
+    knl = lp.split_iname(knl, 'i', 8, inner_tag='l.0')
+    _, test = knl()
+    assert np.allclose(test, 2 * np.arange(m))

@@ -305,7 +305,26 @@ class CompiledISPCKernel(CompiledCKernel):
 
     def _get_code(self):
         # need to include the launcher
-        return '\n'.join([self.dev_code, self.host_code])
+        code = '\n'.join([self.dev_code, self.host_code])
+        # next search for duplicated temporary names
+        import re
+        from cgen import Initializer
+        temp_names = [re.compile(r'[\w\d]+ %(name)s\[\d+\]' % {
+                            'name': x.vdecl.subdecl.name})
+                      for x in self.knl.ast.contents
+                      if isinstance(x, Initializer)]
+
+        temp_set = set()
+        out_lines = []
+        for line in code.split('\n'):
+            if any(x.search(line) for x in temp_names):
+                if line in temp_set:
+                    continue
+                else:
+                    temp_set.update([line])
+            out_lines.append(line)
+
+        return '\n'.join(out_lines)
 
     def _get_extractor(self):
         """ Returns the correct function decl extractor depending on target

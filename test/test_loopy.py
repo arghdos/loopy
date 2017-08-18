@@ -1011,6 +1011,59 @@ def test_atomic(ctx_factory, dtype):
     lp.auto_test_vs_ref(ref_knl, ctx, knl, parameters=dict(n=10000))
 
 
+def test_atomic_load(ctx_factory):
+    dtype = np.float32
+    ctx = ctx_factory()
+    queue = cl.CommandQueue(ctx)
+    from loopy.kernel.data import temp_var_scope as scopes
+    n = 100
+    vec_width = 4
+
+    if (
+            np.dtype(dtype).itemsize == 8
+            and "cl_khr_int64_base_atomics" not in ctx.devices[0].extensions):
+        pytest.skip("64-bit atomics not supported on device")
+
+    import pyopencl.version  # noqa
+    if (
+            cl.version.VERSION < (2015, 2)
+            and dtype == np.int64):
+        pytest.skip("int64 RNG not supported in PyOpenCL < 2015.2")
+
+    knl = lp.make_kernel(
+            "{ [i,j]: 0<=i,j<100 }",
+            """
+            for j
+                <> upper = 0
+                <> lower = 0
+                temp[0] = 0 {id=init, atomic}
+                for i
+                    upper = upper + i * a[i] {id=sum0}
+                    lower = lower - b[i] {id=sum1}
+                end
+                ... lbarrier {id=lb1, dep=sum1:init}
+                temp[0] = temp[0] + lower {id=temp_sum, dep=sum*:lb1:init, atomic,\
+                                           nosync=init}
+                ... lbarrier {id=lb2, dep=temp_sum}
+                out[j] = upper / temp[0] {id=final, dep=sum*:temp_sum:lb2, atomic,\
+                                           nosync=init:temp_sum}
+            end
+            """,
+            [
+                lp.GlobalArg("out", dtype, shape=lp.auto, for_atomic=True),
+                lp.GlobalArg("a", dtype, shape=lp.auto),
+                lp.GlobalArg("b", dtype, shape=lp.auto),
+                lp.TemporaryVariable('temp', dtype, for_atomic=True,
+                                     scope=scopes.LOCAL, shape=(vec_width,)),
+                "..."
+                ],
+            silenced_warnings=["write_race(init)", "write_race(temp_sum)"])
+
+    knl = lp.split_iname(knl, "j", vec_width, inner_tag="l.0")
+    _, out = knl(queue, a=np.arange(n, dtype=dtype), b=np.arange(n, dtype=dtype))
+    assert np.allclose(out, np.full_like(out, (-(2 * n - 1) / float(3 * vec_width))))
+
+
 def test_within_inames_and_reduction():
     # See https://github.com/inducer/loopy/issues/24
 

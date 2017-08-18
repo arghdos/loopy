@@ -696,7 +696,7 @@ class ISPCASTBuilder(CASTBuilder):
             lhs_expr, rhs_expr, lhs_dtype, rhs_type_context):
         return self._emit_atomic_operation(codegen_state, lhs_atomicity, lhs_var,
             lhs_expr, rhs_expr, lhs_dtype, rhs_type_context,
-            'atomic_compare_exchange', need_loop=True)
+            'atomic_swap', need_loop=False)
 
     # }}}
 

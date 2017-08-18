@@ -559,7 +559,7 @@ class ISPCASTBuilder(CASTBuilder):
         index_extractor = re.compile(r'\[([^\]]+)\]')
 
         # find the LHS indexing strings
-        lhs_ind = index_extractor.search(str(lhs_expr)).groups()
+        lhs_ind = index_extractor.findall(str(lhs_expr))
         if lhs_ind:
             lhs_ind = lhs_ind[0]
             # split the LHS by comma's if possible

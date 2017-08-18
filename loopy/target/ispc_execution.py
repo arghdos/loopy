@@ -311,7 +311,7 @@ class CompiledISPCKernel(CompiledCKernel):
         from cgen import Initializer, Collection
         if isinstance(self.knl.ast, Collection):
             # have temporaries
-            temp_names = [re.compile(r'[\w\d]+ %(name)s\[[\d+\*\s]\]' % {
+            temp_names = [re.compile(r'[\w\d]+ %(name)s\[[\d\*\s]+\]' % {
                                 'name': x.vdecl.subdecl.name})
                           for x in self.knl.ast.contents
                           if isinstance(x, Initializer)]

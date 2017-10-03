@@ -212,44 +212,16 @@ class LoopKernel(ImmutableRecordWithoutPickling):
             state=kernel_state.INITIAL,
             target=None,
 
-            # When kernels get intersected in slab decomposition,
-            # their grid sizes shouldn't change. This provides
-            # a way to forward sub-kernel grid size requests.
             overridden_get_grid_sizes_for_insn_ids=None):
+        """
+        :arg overridden_get_grid_sizes_for_insn_ids: A callable. When kernels get
+            intersected in slab decomposition, their grid sizes shouldn't
+            change. This provides a way to forward sub-kernel grid size requests.
+        """
 
         if cache_manager is None:
             from loopy.kernel.tools import SetOperationCacheManager
             cache_manager = SetOperationCacheManager()
-
-        # {{{ make instruction ids unique
-
-        from loopy.kernel.creation import UniqueName
-
-        insn_ids = set()
-        for insn in instructions:
-            if insn.id is not None and not isinstance(insn.id, UniqueName):
-                if insn.id in insn_ids:
-                    raise RuntimeError("duplicate instruction id: %s" % insn.id)
-                insn_ids.add(insn.id)
-
-        insn_id_gen = UniqueNameGenerator(insn_ids)
-
-        new_instructions = []
-
-        for insn in instructions:
-            if insn.id is None:
-                new_instructions.append(
-                        insn.copy(id=insn_id_gen("insn")))
-            elif isinstance(insn.id, UniqueName):
-                new_instructions.append(
-                        insn.copy(id=insn_id_gen(insn.id.name)))
-            else:
-                new_instructions.append(insn)
-
-        instructions = new_instructions
-        del new_instructions
-
-        # }}}
 
         # {{{ process assumptions
 
@@ -1502,6 +1474,9 @@ class LoopKernel(ImmutableRecordWithoutPickling):
         return hash(key_hash.digest())
 
     def __eq__(self, other):
+        if self is other:
+            return True
+
         if not isinstance(other, LoopKernel):
             return False
 

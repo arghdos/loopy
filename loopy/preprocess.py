@@ -30,7 +30,7 @@ from loopy.diagnostic import (
 
 import islpy as isl
 
-from pytools.persistent_dict import PersistentDict
+from pytools.persistent_dict import WriteOncePersistentDict
 
 from loopy.tools import LoopyKeyBuilder
 from loopy.version import DATA_MODEL_VERSION
@@ -1928,7 +1928,7 @@ def find_idempotence(kernel):
             for insn in kernel.instructions)
 
     from collections import defaultdict
-    dep_graph = defaultdict(lambda: set())
+    dep_graph = defaultdict(set)
 
     for insn in kernel.instructions:
         dep_graph[insn.id] = set(writer_id
@@ -2019,7 +2019,6 @@ def limit_boostability(kernel):
 
 # }}}
 
-
 # {{{ check for loads of atomic variables
 
 def check_atomic_loads(kernel):
@@ -2063,7 +2062,8 @@ def check_atomic_loads(kernel):
 # }}}
 
 
-preprocess_cache = PersistentDict("loopy-preprocess-cache-v2-"+DATA_MODEL_VERSION,
+preprocess_cache = WriteOncePersistentDict(
+        "loopy-preprocess-cache-v2-"+DATA_MODEL_VERSION,
         key_builder=LoopyKeyBuilder())
 
 
@@ -2173,7 +2173,7 @@ def preprocess_kernel(kernel, device=None):
     # }}}
 
     if CACHING_ENABLED:
-        preprocess_cache[input_kernel] = kernel
+        preprocess_cache.store_if_not_present(input_kernel, kernel)
 
     return kernel
 

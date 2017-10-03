@@ -29,7 +29,7 @@ import sys
 import islpy as isl
 from loopy.diagnostic import warn_with_kernel, LoopyError  # noqa
 
-from pytools.persistent_dict import PersistentDict
+from pytools.persistent_dict import WriteOncePersistentDict
 from loopy.tools import LoopyKeyBuilder
 from loopy.version import DATA_MODEL_VERSION
 
@@ -1415,8 +1415,8 @@ class DependencyTracker(object):
             raise ValueError("unknown 'var_kind': %s" % var_kind)
 
         from collections import defaultdict
-        self.writer_map = defaultdict(lambda: set())
-        self.reader_map = defaultdict(lambda: set())
+        self.writer_map = defaultdict(set)
+        self.reader_map = defaultdict(set)
         self.temp_to_base_storage = kernel.get_temporary_to_base_storage_map()
 
     def map_to_base_storage(self, var_names):
@@ -1756,7 +1756,8 @@ def insert_barriers(kernel, schedule, kind, verify_only, level=0):
 
 def generate_loop_schedules(kernel, debug_args={}):
     from pytools import MinRecursionLimit
-    with MinRecursionLimit(len(kernel.instructions) * 2):
+    with MinRecursionLimit(max(len(kernel.instructions) * 2,
+                               len(kernel.all_inames()) * 4)):
         for sched in generate_loop_schedules_inner(kernel, debug_args=debug_args):
             yield sched
 
@@ -1939,7 +1940,8 @@ def generate_loop_schedules_inner(kernel, debug_args={}):
 # }}}
 
 
-schedule_cache = PersistentDict("loopy-schedule-cache-v4-"+DATA_MODEL_VERSION,
+schedule_cache = WriteOncePersistentDict(
+        "loopy-schedule-cache-v4-"+DATA_MODEL_VERSION,
         key_builder=LoopyKeyBuilder())
 
 
@@ -1970,7 +1972,7 @@ def get_one_scheduled_kernel(kernel):
             kernel.name, time()-start_time))
 
     if CACHING_ENABLED and not from_cache:
-        schedule_cache[sched_cache_key] = result
+        schedule_cache.store_if_not_present(sched_cache_key, result)
 
     return result
 

@@ -526,11 +526,11 @@ def _pymbolic_parse_if_necessary(x):
         return x
 
 
-def _parse_shape_or_strides(x):
+def _parse_shape_or_strides_or_offsets(x):
     import loopy as lp
     if x == "auto":
         from warnings import warn
-        warn("use of 'auto' as a shape or stride won't work "
+        warn("use of 'auto' as a shape or stride or offset won't work "
                 "any more--use loopy.auto instead",
                 stacklevel=3)
     x = _pymbolic_parse_if_necessary(x)
@@ -635,7 +635,7 @@ class ArrayBase(ImmutableRecord):
             * :class:`loopy.auto`. The strides will be determined by *order*
               and the access footprint.
 
-            * a tuple like like :attr:`numpy.ndarray.shape`.
+            * a tuple like :attr:`numpy.ndarray.shape`.
 
               Each entry of the tuple is also allowed to be a :mod:`pymbolic`
               expression involving kernel parameters, or a (potentially-comma
@@ -660,6 +660,12 @@ class ArrayBase(ImmutableRecord):
               :class:`loopy.CompiledKernel` is even smarter in its treatment of
               this case and will compile custom versions of the kernel based on
               whether the passed arrays have offsets or not.
+            * a tuple like :attr:`numpy.ndarray.shape`.
+
+              This is a _per_stride_ offset, i.e. the offset will applied along each
+              axis. Each entry of the tuple is also allowed to be a :mod:`pymbolic`
+              expression involving kernel parameters, or a (potentially-comma
+              separated) or a string that can be parsed to such an expression.
         """
 
         for kwarg_name in kwargs:
@@ -676,10 +682,10 @@ class ArrayBase(ImmutableRecord):
         shape_known = shape is not None and shape is not lp.auto
 
         if strides_known:
-            strides = _parse_shape_or_strides(strides)
+            strides = _parse_shape_or_strides_or_offsets(strides)
 
         if shape_known:
-            shape = _parse_shape_or_strides(shape)
+            shape = _parse_shape_or_strides_or_offsets(shape)
 
         # {{{ check dim_names
 
@@ -796,6 +802,15 @@ class ArrayBase(ImmutableRecord):
             from warnings import warn
             warn("dim_names is not a tuple when calling ArrayBase constructor",
                     DeprecationWarning, stacklevel=2)
+
+        if offset and isinstance(offset, tuple):
+            # check that it matches length of dim_tags
+            if len(dim_tags) != len(offset):
+                raise LoopyError('Offset shape does not match supplied array '
+                                 'dimension: (%s) expected (%s)' %
+                                 (len(dim_tags), len(strides)))
+            # and pymbolify
+            offset = _parse_shape_or_strides_or_offsets(offset)
 
         ImmutableRecord.__init__(self,
                 name=name,

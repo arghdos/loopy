@@ -619,7 +619,6 @@ def test_per_stride_offset(ctx_factory):
     assert np.all(np.apply_along_axis(np.array_equal, 1, a, np.arange(20)))
 
 
-
 def test_vector_ilp_with_prefetch(ctx_factory):
     ctx = ctx_factory()
 

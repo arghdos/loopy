@@ -1234,6 +1234,7 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
                         off += parse(ary.offset[i]) * ary.dim_tags[i].stride
             except TypeError:
                 # not iterable
+                off = ary.offset
                 pass
 
             if off:
@@ -1244,8 +1245,8 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
                 else:
                     # assume it's an expression
                     return off + sub
-            else:
-                return sub
+        # no offset
+        return sub
 
     if not isinstance(index, tuple):
         index = (index,)

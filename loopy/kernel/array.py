@@ -1236,13 +1236,16 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
                 # not iterable
                 pass
 
-            if off is lp.auto:
-                return var(array_name+"_offset") + sub
-            elif isinstance(off, str):
-                return var(off) + sub
+            if off:
+                if off is lp.auto:
+                    return var(array_name+"_offset") + sub
+                elif isinstance(off, str):
+                    return var(off) + sub
+                else:
+                    # assume it's an expression
+                    return off + sub
             else:
-                # assume it's an expression
-                return off + sub
+                return sub
 
     if not isinstance(index, tuple):
         index = (index,)

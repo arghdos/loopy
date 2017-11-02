@@ -577,6 +577,49 @@ def test_offsets_and_slicing(ctx_factory):
     assert la.norm(b_full.get() - b_full_h) < 1e-13
 
 
+def test_per_stride_offset(ctx_factory):
+    ctx = ctx_factory()
+    queue = cl.CommandQueue(ctx)
+    # precomputed
+    knl = lp.make_kernel(["{[j]: 0 <= j < 10}", "{[i]: 0 <= i < 20}"],
+                   """
+                   for j
+                       for i
+                            a[j, i] = i
+                       end
+                   end
+                   """,
+                   [lp.GlobalArg(
+                        'a', shape=(20, 20), offset='offset * 20', order='C'),
+                    lp.ValueArg('offset', dtype=np.int32)])
+
+    _, (a,) = knl(queue, offset=0, out_host=True)
+    _, (a,) = knl(queue, offset=10, a=a)
+
+    assert np.all(np.apply_along_axis(np.array_equal, 1, a, np.arange(20)))
+
+    # axis specific
+    args = knl.args[:]
+    args[0] = lp.GlobalArg('a', shape=(20, 20), offset=('offset', 0), order='C')
+    knl = knl.copy(args=args)
+
+    _, (a,) = knl(queue, offset=0, out_host=True)
+    _, (a,) = knl(queue, offset=10, a=a)
+
+    assert np.all(np.apply_along_axis(np.array_equal, 1, a, np.arange(20)))
+
+    # unique
+    knl = knl.copy(args=[lp.GlobalArg(
+        'a', shape=(20, 20), offset=lp.auto, order='C')])
+
+    print(lp.generate_code(knl)[0])
+    _, (a,) = knl(queue, a_offset=0, out_host=True)
+    _, (a,) = knl(queue, a_offset=10 * 20, a=a)
+
+    assert np.all(np.apply_along_axis(np.array_equal, 1, a, np.arange(20)))
+
+
+
 def test_vector_ilp_with_prefetch(ctx_factory):
     ctx = ctx_factory()
 

@@ -832,7 +832,13 @@ class ArrayBase(ImmutableRecord):
                 and self.dtype == other.dtype
                 and istoee(self.shape, other.shape)
                 and self.dim_tags == other.dim_tags
-                and isee(self.offset, other.offset)
+                and (isinstance(self.offset, tuple)
+                     == isinstance(other.offset, tuple))
+                and ((
+                    isinstance(self.offset, tuple) and
+                    istoee(self.offset, other.offset)) or
+                    (not isinstance(self.offset, tuple) and
+                        isee(self.offset, other.offet)))
                 and self.dim_names == other.dim_names
                 and self.order == other.order
                 )
@@ -876,8 +882,11 @@ class ArrayBase(ImmutableRecord):
                     % ", ".join(i.stringify(self.max_target_axes > 1)
                         for i in self.dim_tags))
 
-        if self.offset:
+        if self.offset and not isinstance(self.offset, tuple):
             info_entries.append("offset: %s" % self.offset)
+        elif self.offset:
+            info_entries.append("offset: (%s)"
+                        % ", ".join(str(i) for i in self.offset))
 
         return "%s: %s" % (self.name, ", ".join(info_entries))
 

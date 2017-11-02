@@ -1231,7 +1231,7 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
                     # apply each subscript multiplied by the strides
                     off = 0
                     for i in range(len(ary.offset)):
-                        off += parse(ary.offset[i]) * ary.dim_tags[i].stride
+                        off += parse(str(ary.offset[i])) * ary.dim_tags[i].stride
             except TypeError:
                 # not iterable
                 off = ary.offset

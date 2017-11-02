@@ -1219,17 +1219,30 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
 
     def apply_offset(sub):
         import loopy as lp
+        from pymbolic import parse
 
         if ary.offset:
-            if ary.offset is lp.auto:
+            off = None
+            try:
+                # check if we've supplied a tuple or list corresponding to the
+                # indices
+                if not isinstance(ary.offset, str) \
+                        and len(ary.offset) == len(ary.dim_tags):
+                    # apply each subscript multiplied by the strides
+                    off = 0
+                    for i in range(len(ary.offset)):
+                        off += parse(ary.offset[i]) * ary.dim_tags[i].stride
+            except:
+                pass
+            if off is None:
+                off = ary.offset
+            if off is lp.auto:
                 return var(array_name+"_offset") + sub
-            elif isinstance(ary.offset, str):
-                return var(ary.offset) + sub
+            elif isinstance(off, str):
+                return var(off) + sub
             else:
                 # assume it's an expression
-                return ary.offset + sub
-        else:
-            return sub
+                return off + sub
 
     if not isinstance(index, tuple):
         index = (index,)

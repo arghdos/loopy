@@ -664,6 +664,16 @@ def test_per_axis_offset_remove_unused():
     assert not any(arg.name == 'b' for arg in knl.args)
 
 
+def test_per_axis_offset_bad():
+    from loopy.diagnostic import LoopyError
+    with pytest.raises(LoopyError):
+        lp.GlobalArg('a', shape=('size', 20), offset=('offset', 0, 'bad'),
+                                 order='C')
+
+    with pytest.raises(LoopyError):
+        lp.GlobalArg('a', offset=('bad', 'bad'))
+
+
 def test_vector_ilp_with_prefetch(ctx_factory):
     ctx = ctx_factory()
 

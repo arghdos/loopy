@@ -807,7 +807,7 @@ class ArrayBase(ImmutableRecord):
             # check that it matches length of dim_tags
             if dim_tags is not None and len(dim_tags) != len(offset):
                 raise LoopyError('Offset shape does not match supplied array '
-                                 'dimension: (%s) expected (%s)' %
+                                 'dimension, expected: (%s), supplied: (%s)' %
                                  (len(dim_tags), len(offset)))
             elif dim_tags is None:
                 # only auto-shaped? I think?

@@ -331,8 +331,30 @@ def _split_array_axis_inner(kernel, array_name, axis_nr, count, order="C"):
 
     # }}}
 
+    # {{{ adjust offset
+
+    new_offset = ary.offset
+    if ary.offset_per_axis:
+        new_offset = list(new_offset)
+        offset_at_nr = new_offset[axis_nr]
+
+        from loopy.symbolic import simplify_using_aff
+        new_offset[axis_nr] = simplify_using_aff(kernel, offset_at_nr % count)
+        outer_offset = simplify_using_aff(kernel, offset_at_nr // count)
+
+        if order == "F":
+            new_shape.insert(axis_nr+1, outer_offset)
+        elif order == "C":
+            new_shape.insert(axis_nr, outer_offset)
+        else:
+            raise RuntimeError("order '%s' not understood" % order)
+        new_offset = tuple(new_offset)
+
+    # }}}
+
     kernel = achng.with_changed_array(ary.copy(
-        shape=new_shape, dim_tags=new_dim_tags, dim_names=new_dim_names))
+        shape=new_shape, dim_tags=new_dim_tags, dim_names=new_dim_names,
+        offset=new_offset))
 
     # }}}
 

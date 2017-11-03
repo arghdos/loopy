@@ -612,7 +612,6 @@ def test_per_axis_offset(ctx_factory):
     knl = knl.copy(args=[lp.GlobalArg(
         'a', shape=(20, 20), offset=lp.auto, order='C')])
 
-    print(lp.generate_code(knl)[0])
     _, (a,) = knl(queue, a_offset=0, out_host=True)
     _, (a,) = knl(queue, a_offset=10 * 20, a=a)
 
@@ -644,6 +643,25 @@ def test_per_axis_offset_split():
                     for x in ('offset % 4', 'offset // 4', 0))
     knl2 = lp.split_array_axis(knl, 'a', 0, 4, order='F')
     assert istoee(knl2.args[0].offset, offsets)
+
+
+def test_per_axis_offset_remove_unused():
+    knl = lp.make_kernel(["{[j]: 0 <= j < 10}", "{[i]: 0 <= i < 20}"],
+               """
+               for j
+                   for i
+                        a[j, i] = i
+                   end
+               end
+               """,
+               [lp.GlobalArg('a', shape=('size', 20), offset=('offset', 0),
+                             order='C'),
+                lp.GlobalArg('b', shape=(20, 20), offset=('offset', 0),
+                             order='C'),
+                lp.ValueArg('offset', dtype=np.int32),
+                lp.ValueArg('size', dtype=np.int32)])
+    knl = lp.remove_unused_arguments(knl)
+    assert not any(arg.name == 'b' for arg in knl.args)
 
 
 def test_vector_ilp_with_prefetch(ctx_factory):

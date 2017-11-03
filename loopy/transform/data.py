@@ -453,16 +453,19 @@ def remove_unused_arguments(knl):
     from loopy.symbolic import get_dependencies
     from itertools import chain
 
-    def tolerant_get_deps(expr):
+    def tolerant_get_deps(expr, parse=False):
         if expr is None or expr is lp.auto:
             return set()
+        if parse and isinstance(expr, tuple):
+            from loopy.kernel.array import _pymbolic_parse_if_necessary
+            expr = tuple(_pymbolic_parse_if_necessary(x) for x in expr)
         return get_dependencies(expr)
 
     for ary in chain(knl.args, six.itervalues(knl.temporary_variables)):
         if isinstance(ary, ArrayBase):
             refd_vars.update(
                     tolerant_get_deps(ary.shape)
-                    | tolerant_get_deps(ary.offset))
+                    | tolerant_get_deps(ary.offset, parse=True))
 
             for dim_tag in ary.dim_tags:
                 if isinstance(dim_tag, FixedStrideArrayDimTag):

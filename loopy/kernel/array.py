@@ -1249,7 +1249,6 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
 
     def apply_offset(sub):
         import loopy as lp
-        from pymbolic import parse
 
         if ary.offset:
             off = ary.offset
@@ -1260,7 +1259,8 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
                     # apply each subscript multiplied by the strides
                     off = 0
                     for i in range(len(ary.offset)):
-                        off += parse(str(ary.offset[i])) * ary.dim_tags[i].stride
+                        off += _pymbolic_parse_if_necessary(
+                            ary.offset[i]) * ary.dim_tags[i].stride
             except TypeError:
                 # not iterable
                 off = ary.offset

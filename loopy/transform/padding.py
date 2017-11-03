@@ -336,16 +336,17 @@ def _split_array_axis_inner(kernel, array_name, axis_nr, count, order="C"):
     new_offset = ary.offset
     if ary.offset_per_axis:
         new_offset = list(new_offset)
-        offset_at_nr = new_offset[axis_nr]
-
+        from loopy.kernel.array import _pymbolic_parse_if_necessary
         from loopy.symbolic import simplify_using_aff
+
+        offset_at_nr = _pymbolic_parse_if_necessary(new_offset[axis_nr])
         new_offset[axis_nr] = simplify_using_aff(kernel, offset_at_nr % count)
         outer_offset = simplify_using_aff(kernel, offset_at_nr // count)
 
         if order == "F":
-            new_shape.insert(axis_nr+1, outer_offset)
+            new_offset.insert(axis_nr+1, outer_offset)
         elif order == "C":
-            new_shape.insert(axis_nr, outer_offset)
+            new_offset.insert(axis_nr, outer_offset)
         else:
             raise RuntimeError("order '%s' not understood" % order)
         new_offset = tuple(new_offset)

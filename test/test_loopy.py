@@ -577,7 +577,7 @@ def test_offsets_and_slicing(ctx_factory):
     assert la.norm(b_full.get() - b_full_h) < 1e-13
 
 
-def test_per_stride_offset(ctx_factory):
+def test_per_axis_offset(ctx_factory):
     ctx = ctx_factory()
     queue = cl.CommandQueue(ctx)
     # precomputed
@@ -617,6 +617,33 @@ def test_per_stride_offset(ctx_factory):
     _, (a,) = knl(queue, a_offset=10 * 20, a=a)
 
     assert np.all(np.apply_along_axis(np.array_equal, 1, a, np.arange(20)))
+
+
+def test_per_axis_offset_split():
+    knl = lp.make_kernel(["{[j]: 0 <= j < 10}", "{[i]: 0 <= i < 20}"],
+                   """
+                   for j
+                       for i
+                            a[j, i] = i
+                       end
+                   end
+                   """,
+                   [lp.GlobalArg('a', shape=(20, 20), offset=('offset', 0),
+                                 order='C'),
+                    lp.ValueArg('offset', dtype=np.int32)])
+
+    from loopy.symbolic import is_tuple_of_expressions_equal as istoee
+    from loopy.kernel.array import _pymbolic_parse_if_necessary
+
+    offsets = tuple(_pymbolic_parse_if_necessary(x)
+                    for x in ('offset // 4', 'offset % 4', 0))
+    knl2 = lp.split_array_axis(knl, 'a', 0, 4, order='C')
+    assert istoee(knl2.args[0].offset, offsets)
+
+    offsets = tuple(_pymbolic_parse_if_necessary(x)
+                    for x in ('offset % 4', 'offset // 4', 0))
+    knl2 = lp.split_array_axis(knl, 'a', 0, 4, order='F')
+    assert istoee(knl2.args[0].offset, offsets)
 
 
 def test_vector_ilp_with_prefetch(ctx_factory):

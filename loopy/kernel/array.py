@@ -526,11 +526,11 @@ def _pymbolic_parse_if_necessary(x):
         return x
 
 
-def _parse_shape_or_strides_or_offsets(x):
+def _parse_shape_or_strides(x):
     import loopy as lp
     if x == "auto":
         from warnings import warn
-        warn("use of 'auto' as a shape or stride or offset won't work "
+        warn("use of 'auto' as a shape or stride won't work "
                 "any more--use loopy.auto instead",
                 stacklevel=3)
     x = _pymbolic_parse_if_necessary(x)
@@ -682,10 +682,10 @@ class ArrayBase(ImmutableRecord):
         shape_known = shape is not None and shape is not lp.auto
 
         if strides_known:
-            strides = _parse_shape_or_strides_or_offsets(strides)
+            strides = _parse_shape_or_strides(strides)
 
         if shape_known:
-            shape = _parse_shape_or_strides_or_offsets(shape)
+            shape = _parse_shape_or_strides(shape)
 
         # {{{ check dim_names
 
@@ -805,12 +805,14 @@ class ArrayBase(ImmutableRecord):
 
         if offset and isinstance(offset, tuple):
             # check that it matches length of dim_tags
-            if len(dim_tags) != len(offset):
+            if dim_tags is not None and len(dim_tags) != len(offset):
                 raise LoopyError('Offset shape does not match supplied array '
                                  'dimension: (%s) expected (%s)' %
                                  (len(dim_tags), len(strides)))
-            # and pymbolify
-            offset = _parse_shape_or_strides_or_offsets(offset)
+            elif dim_tags is None:
+                # only auto-shaped? I think?
+                raise LoopyError('Offset-per-axis on auto-shaped arrays not'
+                                 ' supported')
 
         ImmutableRecord.__init__(self,
                 name=name,
@@ -834,17 +836,21 @@ class ArrayBase(ImmutableRecord):
                 and self.dim_tags == other.dim_tags
                 and (isinstance(self.offset, tuple)
                      == isinstance(other.offset, tuple))
-                and ((
-                    isinstance(self.offset, tuple) and
-                    istoee(self.offset, other.offset)) or
-                    (not isinstance(self.offset, tuple) and
-                        isee(self.offset, other.offet)))
+                and ((self.offset_per_axis and other.offset_per_axis and
+                      istoee(self.offset, other.offset)) or
+                     (not (self.offset_per_axis and other.offset_per_axis)
+                      and isee(self.offset, other.offset)))
                 and self.dim_names == other.dim_names
                 and self.order == other.order
                 )
 
     def __ne__(self, other):
         return not self.__eq__(other)
+
+    @property
+    def offset_per_axis(self):
+        return isinstance(self.offset, tuple) and self.dim_tags is not None and \
+            len(self.offset) == len(self.dim_tags)
 
     def stringify(self, include_typename):
         import loopy as lp
@@ -882,11 +888,11 @@ class ArrayBase(ImmutableRecord):
                     % ", ".join(i.stringify(self.max_target_axes > 1)
                         for i in self.dim_tags))
 
-        if self.offset and not isinstance(self.offset, tuple):
-            info_entries.append("offset: %s" % self.offset)
-        elif self.offset:
+        if self.offset_per_axis:
             info_entries.append("offset: (%s)"
                         % ", ".join(str(i) for i in self.offset))
+        elif self.offset:
+            info_entries.append("offset: %s" % self.offset)
 
         return "%s: %s" % (self.name, ", ".join(info_entries))
 
@@ -1250,8 +1256,7 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
             try:
                 # check if we've supplied a tuple or list corresponding to the
                 # indices
-                if not isinstance(ary.offset, str) \
-                        and len(ary.offset) == len(ary.dim_tags):
+                if ary.offset_per_axis:
                     # apply each subscript multiplied by the strides
                     off = 0
                     for i in range(len(ary.offset)):

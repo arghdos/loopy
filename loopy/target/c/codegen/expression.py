@@ -267,7 +267,15 @@ class ExpressionToCExpressionMapper(IdentityMapper):
 
             else:
                 # GlobalArg
-                if arg.offset:
+                if arg.offset_per_axis:
+                    from pymbolic import parse
+                    # TODO: not sure the context within this is called
+                    # ask Andreas if this looks good
+                    # apply to strides
+                    offset = 0
+                    for i in range(len(arg.offset)):
+                        offset += parse(str(arg.offset[i])) * arg.dim_tags[i].stride
+                elif arg.offset:
                     offset = Variable(arg.offset)
                 else:
                     offset = 0

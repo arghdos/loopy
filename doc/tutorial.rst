@@ -122,7 +122,9 @@ always see loopy's view of a kernel by printing it.
     i: None
     ---------------------------------------------------------------------------
     INSTRUCTIONS:
-     [i]                                  out[i] <- 2*a[i]   # insn
+    for i
+      out[i] = 2*a[i]  {id=insn}
+    end i
     ---------------------------------------------------------------------------
 
 You'll likely have noticed that there's quite a bit more information here
@@ -1105,11 +1107,12 @@ work item:
 
 :mod:`loopy` supports two kinds of barriers:
 
-* *Local barriers* ensure consistency of local memory accesses to items within
+* *Local barriers* ensure consistency of memory accesses to items within
   *the same* work group. This synchronizes with all instructions in the work
-  group.
+  group.  The type of memory (local or global) may be specified by the
+  :attr:`loopy.instruction.BarrierInstruction.mem_kind`
 
-* *Global barriers* ensure consistency of global memory accesses
+* *Global barriers* ensure consistency of memory accesses
   across *all* work groups, i.e. it synchronizes with every work item
   executing the kernel. Note that there is no exact equivalent for
   this kind of barrier in OpenCL. [#global-barrier-note]_
@@ -1212,11 +1215,11 @@ should call :func:`loopy.get_one_scheduled_kernel`:
    ---------------------------------------------------------------------------
    SCHEDULE:
       0: CALL KERNEL rotate_v2(extra_args=[], extra_inames=[])
-      1:     [maketmp] tmp <- arr[i_inner + i_outer*16]
+      1:     tmp = arr[i_inner + i_outer*16]  {id=maketmp}
       2: RETURN FROM KERNEL rotate_v2
-      3: ---BARRIER:global---
+      3: ... gbarrier
       4: CALL KERNEL rotate_v2_0(extra_args=[], extra_inames=[])
-      5:     [rotate] arr[((1 + i_inner + i_outer*16) % n)] <- tmp
+      5:     arr[((1 + i_inner + i_outer*16) % n)] = tmp  {id=rotate}
       6: RETURN FROM KERNEL rotate_v2_0
    ---------------------------------------------------------------------------
 
@@ -1250,13 +1253,13 @@ put those instructions into the schedule.
    ---------------------------------------------------------------------------
    SCHEDULE:
       0: CALL KERNEL rotate_v2(extra_args=['tmp_save_slot'], extra_inames=[])
-      1:     [maketmp] tmp <- arr[i_inner + i_outer*16]
-      2:     [tmp.save] tmp_save_slot[tmp_save_hw_dim_0_rotate_v2, tmp_save_hw_dim_1_rotate_v2] <- tmp
+      1:     tmp = arr[i_inner + i_outer*16]  {id=maketmp}
+      2:     tmp_save_slot[tmp_save_hw_dim_0_rotate_v2, tmp_save_hw_dim_1_rotate_v2] = tmp  {id=tmp.save}
       3: RETURN FROM KERNEL rotate_v2
-      4: ---BARRIER:global---
+      4: ... gbarrier
       5: CALL KERNEL rotate_v2_0(extra_args=['tmp_save_slot'], extra_inames=[])
-      6:     [tmp.reload] tmp <- tmp_save_slot[tmp_reload_hw_dim_0_rotate_v2_0, tmp_reload_hw_dim_1_rotate_v2_0]
-      7:     [rotate] arr[((1 + i_inner + i_outer*16) % n)] <- tmp
+      6:     tmp = tmp_save_slot[tmp_reload_hw_dim_0_rotate_v2_0, tmp_reload_hw_dim_1_rotate_v2_0]  {id=tmp.reload}
+      7:     arr[((1 + i_inner + i_outer*16) % n)] = tmp  {id=rotate}
       8: RETURN FROM KERNEL rotate_v2_0
    ---------------------------------------------------------------------------
 

@@ -362,6 +362,14 @@ def parse_insn_options(opt_dict, options_str, assignee_names=None):
                                 % v)
             del assignee_name
 
+        elif opt_key == "mem_kind":
+            opt_value = opt_value.lower().strip()
+            if opt_value not in ['local', 'global']:
+                raise LoopyError("Unknown memory synchronization type %s specified"
+                    " expected, 'local' or 'global'."
+                    % opt_value)
+            result["mem_kind"] = opt_value
+
         else:
             raise ValueError(
                     "unrecognized instruction option '%s' "
@@ -444,7 +452,7 @@ def parse_insn(groups, insn_options):
     if "lhs" in groups:
         try:
             lhs = parse(groups["lhs"])
-        except:
+        except Exception:
             print("While parsing left hand side '%s', "
                     "the following error occurred:" % groups["lhs"])
             raise
@@ -453,7 +461,7 @@ def parse_insn(groups, insn_options):
 
     try:
         rhs = parse(groups["rhs"])
-    except:
+    except Exception:
         print("While parsing right hand side '%s', "
                 "the following error occurred:" % groups["rhs"])
         raise
@@ -527,14 +535,14 @@ def parse_subst_rule(groups):
     from loopy.symbolic import parse
     try:
         lhs = parse(groups["lhs"])
-    except:
+    except Exception:
         print("While parsing left hand side '%s', "
                 "the following error occurred:" % groups["lhs"])
         raise
 
     try:
         rhs = parse(groups["rhs"])
-    except:
+    except Exception:
         print("While parsing right hand side '%s', "
                 "the following error occurred:" % groups["rhs"])
         raise
@@ -1002,7 +1010,7 @@ def parse_domains(domains, defines):
 
             try:
                 dom = isl.BasicSet.read_from_str(isl.DEFAULT_CONTEXT, dom)
-            except:
+            except Exception:
                 print("failed to parse domain '%s'" % dom)
                 raise
         else:

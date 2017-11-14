@@ -189,9 +189,10 @@ class ASTBuilderBase(object):
     def add_vector_access(self, access_expr, index):
         raise NotImplementedError()
 
-    def emit_barrier(self, kind, comment):
+    def emit_barrier(self, kind, mem_kind, comment):
         """
         :arg kind: ``"local"`` or ``"global"``
+        :arg mem_kind: ``"local"`` or ``"global"``
         """
         raise NotImplementedError()
 
@@ -210,6 +211,10 @@ class ASTBuilderBase(object):
     def emit_sequential_loop(self, codegen_state, iname, iname_dtype,
             static_lbound, static_ubound, inner):
         raise NotImplementedError()
+
+    @property
+    def can_implement_conditionals(self):
+        return False
 
     def emit_if(self, condition_str, ast):
         raise NotImplementedError()
@@ -274,28 +279,6 @@ class DummyHostASTBuilder(ASTBuilderBase):
     @property
     def ast_block_scope_class(self):
         return _DummyASTBlock
-
-    def emit_assignment(self, codegen_state, insn):
-        return None
-
-    def emit_multiple_assignment(self, codegen_state, insn):
-        return None
-
-    def emit_sequential_loop(self, codegen_state, iname, iname_dtype,
-            static_lbound, static_ubound, inner):
-        return None
-
-    def emit_if(self, condition_str, ast):
-        return None
-
-    def emit_initializer(self, codegen_state, dtype, name, val_str, is_const):
-        return None
-
-    def emit_blank_line(self):
-        return None
-
-    def emit_comment(self, s):
-        return None
 
 # }}}
 

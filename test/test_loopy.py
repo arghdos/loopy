@@ -518,6 +518,32 @@ def test_arg_guessing_with_reduction(ctx_factory):
     print(knl)
     print(lp.CompiledKernel(ctx, knl).get_highlighted_code())
 
+
+def test_unknown_arg_shape(ctx_factory):
+    ctx = ctx_factory()
+    from loopy.target.pyopencl import PyOpenCLTarget
+    from loopy.compiled import CompiledKernel
+    bsize = [256, 0]
+
+    knl = lp.make_kernel(
+        "{[i,j]: 0<=i<n and 0<=j<m}",
+        """
+        for i
+            <int32> gid = i/256
+            <int32> start = gid*256
+            for j
+                a[start + j] = a[start + j] + j
+            end
+        end
+        """,
+        seq_dependencies=True,
+        name="uniform_l",
+        target=PyOpenCLTarget(),
+        assumptions="m<=%d and m>=1 and n mod %d = 0" % (bsize[0], bsize[0]))
+
+    knl = lp.add_and_infer_dtypes(knl, dict(a=np.float32))
+    cl_kernel_info = CompiledKernel(ctx, knl).cl_kernel_info(frozenset())  # noqa
+
 # }}}
 
 
@@ -1231,6 +1257,28 @@ def test_literal_local_barrier(ctx_factory):
     ref_knl = knl
 
     lp.auto_test_vs_ref(ref_knl, ctx, knl, parameters=dict(n=5))
+
+
+def test_local_barrier_mem_kind():
+    def __test_type(mtype, expected):
+        insn = '... lbarrier'
+        if mtype:
+            insn += '{mem_kind=%s}' % mtype
+        knl = lp.make_kernel(
+                "{ [i]: 0<=i<n }",
+                """
+                for i
+                    %s
+                end
+                """ % insn, seq_dependencies=True,
+                target=lp.PyOpenCLTarget())
+
+        cgr = lp.generate_code_v2(knl)
+        assert 'barrier(%s)' % expected in cgr.device_code()
+
+    __test_type('', 'CLK_LOCAL_MEM_FENCE')
+    __test_type('global', 'CLK_GLOBAL_MEM_FENCE')
+    __test_type('local', 'CLK_LOCAL_MEM_FENCE')
 
 
 def test_kernel_splitting(ctx_factory):
@@ -2380,11 +2428,12 @@ def test_nosync_option_parsing():
         """,
         options=lp.Options(allow_terminal_colors=False))
     kernel_str = str(knl)
-    assert "# insn1,no_sync_with=insn1@any" in kernel_str
-    assert "# insn2,no_sync_with=insn1@any:insn2@any" in kernel_str
-    assert "# insn3,no_sync_with=insn1@local:insn2@global:insn3@any" in kernel_str
-    assert "# insn4,no_sync_with=insn1@local:insn2@local:insn3@local:insn5@local" in kernel_str  # noqa
-    assert "# insn5,no_sync_with=insn1@any" in kernel_str
+    print(kernel_str)
+    assert "id=insn1, no_sync_with=insn1@any" in kernel_str
+    assert "id=insn2, no_sync_with=insn1@any:insn2@any" in kernel_str
+    assert "id=insn3, no_sync_with=insn1@local:insn2@global:insn3@any" in kernel_str
+    assert "id=insn4, no_sync_with=insn1@local:insn2@local:insn3@local:insn5@local" in kernel_str  # noqa
+    assert "id=insn5, no_sync_with=insn1@any" in kernel_str
 
 
 def assert_barrier_between(knl, id1, id2, ignore_barriers_in_levels=()):
@@ -2818,6 +2867,30 @@ def test_preamble_with_separate_temporaries(ctx_factory):
     # check that it actually performs the lookup correctly
     assert np.allclose(kernel(
         queue, data=data.flatten('C'))[1][0], data[offsets[:-1] + 1])
+
+
+def test_add_prefetch_works_in_lhs_index():
+    knl = lp.make_kernel(
+            "{ [n,k,l,k1,l1,k2,l2]: "
+            "start<=n<end and 0<=k,k1,k2<3 and 0<=l,l1,l2<2 }",
+            """
+            for n
+                <> a1_tmp[k,l] = a1[a1_map[n, k],l]
+                a1_tmp[k1,l1] = a1_tmp[k1,l1] + 1
+                a1_out[a1_map[n,k2], l2] = a1_tmp[k2,l2]
+            end
+            """,
+            [
+                lp.GlobalArg("a1,a1_out", None, "ndofs,2"),
+                lp.GlobalArg("a1_map", None, "nelements,3"),
+                "..."
+            ])
+
+    knl = lp.add_prefetch(knl, "a1_map", "k")
+
+    from loopy.symbolic import get_dependencies
+    for insn in knl.instructions:
+        assert "a1_map" not in get_dependencies(insn.assignees)
 
 
 if __name__ == "__main__":

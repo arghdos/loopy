@@ -172,7 +172,8 @@ from collections import namedtuple
 _NosyncParseResult = namedtuple("_NosyncParseResult", "expr, scope")
 
 
-def parse_insn_options(opt_dict, options_str, assignee_names=None):
+def parse_insn_options(opt_dict, options_str, assignee_names=None,
+                       insn_kind=None):
     if options_str is None:
         return opt_dict
 
@@ -363,6 +364,9 @@ def parse_insn_options(opt_dict, options_str, assignee_names=None):
             del assignee_name
 
         elif opt_key == "mem_kind":
+            if insn_kind not in ['gbarrier', 'lbarrier']:
+                raise LoopyError("Cannot supply memory synchronization type to "
+                    "non-barrier instruction %s" % insn_kind)
             opt_value = opt_value.lower().strip()
             if opt_value not in ['local', 'global']:
                 raise LoopyError("Unknown memory synchronization type %s specified"
@@ -580,7 +584,8 @@ def parse_special_insn(groups, insn_options):
     insn_options = parse_insn_options(
             insn_options.copy(),
             groups["options"],
-            assignee_names=())
+            assignee_names=(),
+            kind=groups['kind'])
 
     del insn_options["atomicity"]
 
@@ -599,10 +604,10 @@ def parse_special_insn(groups, insn_options):
 
     if special_insn_kind == "gbarrier":
         cls = BarrierInstruction
-        kwargs["kind"] = "global"
+        kwargs["sychronization_kind"] = "global"
     elif special_insn_kind == "lbarrier":
         cls = BarrierInstruction
-        kwargs["kind"] = "local"
+        kwargs["sychronization_kind"] = "local"
     elif special_insn_kind == "nop":
         cls = NoOpInstruction
     else:

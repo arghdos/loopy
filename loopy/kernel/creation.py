@@ -172,8 +172,7 @@ from collections import namedtuple
 _NosyncParseResult = namedtuple("_NosyncParseResult", "expr, scope")
 
 
-def parse_insn_options(opt_dict, options_str, assignee_names=None,
-                       insn_kind=None):
+def parse_insn_options(opt_dict, options_str, assignee_names=None):
     if options_str is None:
         return opt_dict
 
@@ -364,9 +363,6 @@ def parse_insn_options(opt_dict, options_str, assignee_names=None,
             del assignee_name
 
         elif opt_key == "mem_kind":
-            if insn_kind not in ['gbarrier', 'lbarrier']:
-                raise LoopyError("Cannot supply memory synchronization type to "
-                    "non-barrier instruction %s" % insn_kind)
             opt_value = opt_value.lower().strip()
             if opt_value not in ['local', 'global']:
                 raise LoopyError("Unknown memory synchronization type %s specified"
@@ -442,6 +438,17 @@ SUBST_RE = re.compile(
         r"^\s*(?P<lhs>.+?)\s*:=\s*(?P<rhs>.+)\s*$")
 
 
+def check_illegal_options(insn_options, insn_type):
+    illegal_options = []
+    if insn_type not in ['gbarrier', 'lbarrier']:
+        illegal_options.append('mem_kind')
+
+    bad_options = [x for x in illegal_options if x in insn_options]
+    if bad_options:
+        raise LoopyError("Cannot supply option(s) '%s' to instruction type '%s'" %
+                         ', '.join(bad_options), insn_type)
+
+
 def parse_insn(groups, insn_options):
     """
     :return: a tuple ``(insn, inames_to_dup)``, where insn is a
@@ -515,6 +522,9 @@ def parse_insn(groups, insn_options):
             groups["options"],
             assignee_names=assignee_names)
 
+    # check for bad options
+    check_illegal_options(insn_options, 'assignment')
+
     insn_id = insn_options.pop("insn_id", None)
     inames_to_dup = insn_options.pop("inames_to_dup", [])
 
@@ -584,8 +594,7 @@ def parse_special_insn(groups, insn_options):
     insn_options = parse_insn_options(
             insn_options.copy(),
             groups["options"],
-            assignee_names=(),
-            insn_kind=groups['kind'])
+            assignee_names=())
 
     del insn_options["atomicity"]
 
@@ -601,6 +610,8 @@ def parse_special_insn(groups, insn_options):
 
     from loopy.kernel.instruction import NoOpInstruction, BarrierInstruction
     special_insn_kind = groups["kind"]
+    # check for bad options
+    check_illegal_options(insn_options, special_insn_kind)
 
     if special_insn_kind == "gbarrier":
         cls = BarrierInstruction
@@ -815,6 +826,8 @@ def parse_instructions(instructions, defines):
                     parse_insn_options(
                         insn_options_stack[-1],
                         with_options_match.group("options")))
+            # check for bad options
+            check_illegal_options(insn_options_stack[-1], 'with-block')
             continue
 
         for_match = FOR_RE.match(insn)

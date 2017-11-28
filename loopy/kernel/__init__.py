@@ -41,6 +41,7 @@ from loopy.library.function import (
 
 from loopy.diagnostic import CannotBranchDomainTree, LoopyError
 from loopy.tools import natsorted
+from loopy.diagnostic import StaticValueFindingError
 
 
 # {{{ unique var names
@@ -961,7 +962,7 @@ class LoopKernel(ImmutableRecordWithoutPickling):
                 size = static_max_of_pw_aff(size,
                         constants_only=isinstance(tag, LocalIndexTag),
                         context=self.assumptions)
-            except ValueError:
+            except StaticValueFindingError:
                 pass
 
             tgt_dict[tag.axis] = size
@@ -1167,7 +1168,7 @@ class LoopKernel(ImmutableRecordWithoutPickling):
         if "rules" in what and kernel.substitutions:
             lines.extend(sep)
             if show_labels:
-                lines.append("SUBSTIUTION RULES:")
+                lines.append("SUBSTITUTION RULES:")
             for rule_name in natsorted(six.iterkeys(kernel.substitutions)):
                 lines.append(str(kernel.substitutions[rule_name]))
 

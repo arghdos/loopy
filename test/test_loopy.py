@@ -52,6 +52,31 @@ __all__ = [
         ]
 
 
+def test_globals_decl_once_with_multi_subprogram(ctx_factory):
+    ctx = ctx_factory()
+    queue = cl.CommandQueue(ctx)
+    np.random.seed(17)
+    a = np.random.randn(16)
+    cnst = np.random.randn(16)
+    knl = lp.make_kernel(
+            "{[i, ii]: 0<=i, ii<n}",
+            """
+            out[i] = a[i]+cnst[i]{id=first}
+            out[ii] = 2*out[ii]+cnst[ii]{id=second}
+            """,
+            [lp.TemporaryVariable(
+                'cnst', shape=('n'), initializer=cnst,
+                scope=lp.temp_var_scope.GLOBAL,
+                read_only=True), '...'])
+    knl = lp.fix_parameters(knl, n=16)
+    knl = lp.add_barrier(knl, "id:first", "id:second")
+
+    knl = lp.split_iname(knl, "i", 2, outer_tag="g.0", inner_tag="l.0")
+    knl = lp.split_iname(knl, "ii", 2, outer_tag="g.0", inner_tag="l.0")
+    evt, (out,) = knl(queue, a=a)
+    assert np.linalg.norm(out-((2*(a+cnst)+cnst))) <= 1e-15
+
+
 def test_complicated_subst(ctx_factory):
     #ctx = ctx_factory()
 
@@ -542,7 +567,7 @@ def test_unknown_arg_shape(ctx_factory):
         assumptions="m<=%d and m>=1 and n mod %d = 0" % (bsize[0], bsize[0]))
 
     knl = lp.add_and_infer_dtypes(knl, dict(a=np.float32))
-    cl_kernel_info = CompiledKernel(ctx, knl).cl_kernel_info(frozenset())  # noqa
+    kernel_info = CompiledKernel(ctx, knl).kernel_info(frozenset())  # noqa
 
 # }}}
 
@@ -2715,6 +2740,11 @@ def test_fixed_parameters(ctx_factory):
             fixed_parameters=dict(n=1))
 
     knl(queue)
+
+
+def test_parameter_inference():
+    knl = lp.make_kernel("{[i]: 0 <= i < n and i mod 2 = 0}", "")
+    assert knl.all_params() == set(["n"])
 
 
 def test_execution_backend_can_cache_dtypes(ctx_factory):

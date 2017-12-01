@@ -37,7 +37,7 @@ else:
 
 
 def test_c_target():
-    from loopy.target.c import CTarget
+    from loopy.target.c import ExecutableCTarget
 
     knl = lp.make_kernel(
             "{ [i]: 0<=i<n }",
@@ -47,14 +47,14 @@ def test_c_target():
                 lp.GlobalArg("a", np.float32, shape=lp.auto),
                 "..."
                 ],
-            target=CTarget())
+            target=ExecutableCTarget())
 
     assert np.allclose(knl(a=np.arange(16, dtype=np.float32))[1],
                 2 * np.arange(16, dtype=np.float32))
 
 
 def test_c_target_strides():
-    from loopy.target.c import CTarget
+    from loopy.target.c import ExecutableCTarget
 
     def __get_kernel(order='C'):
         return lp.make_kernel(
@@ -65,7 +65,7 @@ def test_c_target_strides():
                     lp.GlobalArg("a", np.float32, shape=('n', 'n'), order=order),
                     "..."
                     ],
-                target=CTarget())
+                target=ExecutableCTarget())
 
     # test with C-order
     knl = __get_kernel('C')
@@ -85,7 +85,7 @@ def test_c_target_strides():
 
 
 def test_c_target_strides_nonsquare():
-    from loopy.target.c import CTarget
+    from loopy.target.c import ExecutableCTarget
 
     def __get_kernel(order='C'):
         indicies = ['i', 'j', 'k']
@@ -107,7 +107,7 @@ def test_c_target_strides_nonsquare():
                     lp.GlobalArg("a", np.float32, shape=sizes, order=order),
                     "..."
                     ],
-                target=CTarget())
+                target=ExecutableCTarget())
 
     # test with C-order
     knl = __get_kernel('C')
@@ -131,7 +131,7 @@ def test_c_target_strides_nonsquare():
 
 
 def test_c_optimizations():
-    from loopy.target.c import CTarget
+    from loopy.target.c import ExecutableCTarget
 
     def __get_kernel(order='C'):
         indicies = ['i', 'j', 'k']
@@ -153,7 +153,7 @@ def test_c_optimizations():
                     lp.GlobalArg("a", np.float32, shape=sizes, order=order),
                     "..."
                     ],
-                target=CTarget()), sizes
+                target=ExecutableCTarget()), sizes
 
     # test with ILP
     knl, sizes = __get_kernel('C')
@@ -172,3 +172,20 @@ def test_c_optimizations():
                       order='C')
 
     assert np.allclose(knl(a=a_np)[1], 2 * a_np)
+
+
+def test_function_decl_extractor():
+    # ensure that we can tell the difference between pointers, constants, etc.
+    # in execution
+    from loopy.target.c import ExecutableCTarget
+
+    knl = lp.make_kernel('{[i]: 0 <= i < 10}',
+        """
+            a[i] = b[i] + v
+        """,
+        [lp.GlobalArg('a', shape=(10,), dtype=np.int32),
+         lp.ConstantArg('b', shape=(10)),
+         lp.ValueArg('v', dtype=np.int32)],
+        target=ExecutableCTarget())
+
+    assert np.allclose(knl(b=np.arange(10), v=-1)[1], np.arange(10) - 1)

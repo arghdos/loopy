@@ -367,15 +367,12 @@ class CompiledCKernel(object):
     """
 
     def __init__(self, knl, idi, dev_code, target, comp=CCompiler()):
-        from loopy.target.c import CTarget
-        assert isinstance(target, CTarget)
         self.target = target
         self.name = knl.name
         # get code and build
         self.code = dev_code
         self.comp = comp
-        self.checksum, self.dll = self.comp.build(
-            self.name, self.code)
+        self.dll = self.comp.build(self.name, self.code)
 
         # get the function declaration for interface with ctypes
         func_decl = IDIToCDLL(self.target)
@@ -386,17 +383,11 @@ class CompiledCKernel(object):
 
     def _get_linking_name(self):
         """ return device program name for C-kernel """
-        return self.knl.name
+        return self.name
 
     def _get_code(self):
         """ No 'host' for C-only """
         return self.dev_code
-
-    def _get_extractor(self):
-        """ Returns the correct function decl extractor depending on target
-            type"""
-        from loopy.target.c import CFunctionDeclExtractor
-        return CFunctionDeclExtractor()
 
     def __call__(self, *args):
         """Execute kernel with given args mapped to ctypes equivalents."""
@@ -466,7 +457,7 @@ class CKernelExecutor(KernelExecutorBase):
 
         c_kernels = []
         for dp in codegen_result.device_programs:
-            c_kernels.append(CompiledCKernel(dp,
+            c_kernels.append(self.get_compiled(dp,
                 codegen_result.implemented_data_info, all_code, self.kernel.target,
                 self.compiler))
 

@@ -2046,6 +2046,7 @@ def limit_boostability(kernel):
 
 # }}}
 
+
 # {{{ check for loads of atomic variables
 
 def check_atomic_loads(kernel):

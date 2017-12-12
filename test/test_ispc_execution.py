@@ -181,11 +181,49 @@ def test_ispc_optimizations():
     assert np.allclose(knl(a=a_np)[1], 2 * a_np)
 
 
+def test_bad_vecsize_fails():
+    def __get_kernel(order='C'):
+        indicies = ['i', 'j', 'k']
+        sizes = tuple(np.random.randint(4, 11, size=len(indicies)))
+        # create domain strings
+        domain_template = '{{ [{iname}]: 0 <= {iname} < {size} }}'
+        domains = []
+        for idx, size in zip(indicies, sizes):
+            domains.append(domain_template.format(
+                iname=idx,
+                size=size))
+        statement = 'out[{indexed}] = 2 * a[{indexed}]'.format(
+            indexed=', '.join(indicies))
+        return lp.make_kernel(
+            domains,
+            statement,
+            [
+                lp.GlobalArg("out", np.float32, shape=sizes, order=order),
+                lp.GlobalArg("a", np.float32, shape=sizes, order=order),
+                "..."
+            ],
+            target=ISPCTarget()), sizes
+
+    knl, sizes = __get_kernel('C')
+    # can't vectorize w/ size 3
+    knl = lp.split_iname(knl, 'i', 3, inner_tag='l.0', outer_tag='g.0')
+    a_np = np.reshape(np.arange(np.product(sizes), dtype=np.float32),
+                      sizes,
+                      order='C')
+
+    from codepy.toolchain import CompileError
+    with pytest.raises(CompileError):
+        assert np.allclose(knl(a=a_np)[1], 2 * a_np)
+
+
 @pytest.mark.parametrize('vec_width', [4, 8, 16])
 @pytest.mark.parametrize('target', ['sse2', 'sse4', 'avx1', 'av2'])
 @pytest.mark.parametrize('n', [10, 100])
 def test_ispc_vector_sizes_and_targets(vec_width, target, n):
     from loopy.target.ispc_execution import ISPCCompiler
+
+    if target == 'sse4' and vec_width == 16:
+        pytest.skip('Not recognized by ispc')
 
     compiler = ISPCCompiler(vector_width=vec_width, target=target)
     target = ISPCTarget(compiler=compiler)

@@ -33,6 +33,7 @@ from codepy.toolchain import guess_toolchain
 from codepy.jit import compile_from_string
 import six
 import ctypes
+from pytools import ImmutableRecord
 
 import numpy as np
 
@@ -177,7 +178,7 @@ class CExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
         return arg.name
 
 
-class CCompiler(object):
+class CCompiler(ImmutableRecord):
 
     """
     The compiler module handles invocation of compilers to generate a shared lib
@@ -203,7 +204,7 @@ class CCompiler(object):
                  cc='gcc', cflags='-std=c99 -O3 -fPIC'.split(),
                  ldflags='-shared'.split(), libraries=[],
                  include_dirs=[], library_dirs=[], defines=[],
-                 source_suffix='c'):
+                 source_suffix='c', **kwargs):
 
         # try to get a default toolchain
         # or subclass supplied version if available
@@ -226,6 +227,18 @@ class CCompiler(object):
             self.toolchain = self.toolchain.copy(**diff)
         self.tempdir = tempfile.mkdtemp(prefix="tmp_loopy")
         self.source_suffix = source_suffix
+
+        # define record
+        ImmutableRecord.__init__(self,
+                cc=self.toolchain.cc,
+                cflags=self.toolchain.cflags,
+                ldflags=self.toolchain.ldflags,
+                libraries=self.toolchain.libraries,
+                include_dirs=self.toolchain.include_dirs,
+                defines=self.toolchain.defines,
+                source_suffix=self.source_suffix,
+                # and include any subfields
+                **kwargs)
 
     def _tempname(self, name):
         """Build temporary filename path in tempdir."""

@@ -217,13 +217,26 @@ def test_bad_vecsize_fails():
 
 
 @pytest.mark.parametrize('vec_width', [4, 8, 16])
-@pytest.mark.parametrize('target_name', ['sse2', 'sse4', 'avx1', 'av2'])
+@pytest.mark.parametrize('target_name', ['sse2', 'sse4', 'avx1', 'avx2'])
 @pytest.mark.parametrize('n', [10, 100])
 def test_ispc_vector_sizes_and_targets(vec_width, target_name, n):
     from loopy.target.ispc_execution import ISPCCompiler
+    from x86cpu import info
 
     if 'sse' in target_name and vec_width == 16:
         pytest.skip('Not recognized by ispc')
+
+    # check vector capability of test machine
+    test_target = target_name
+    prefix = 'has'
+    if 'avx' in target_name:
+        prefix = 'supports'
+        if target_name == 'avx1':
+            test_target = 'avx'
+    if target_name == 'sse4':
+        test_target = 'sse4_2'
+    if not getattr(info, '{0}_{1}'.format(prefix, test_target)):
+        pytest.skip('Target not supported on cpu')
 
     compiler = ISPCCompiler(vector_width=vec_width, target_name=target_name)
     target = ISPCTarget(compiler=compiler)

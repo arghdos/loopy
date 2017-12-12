@@ -331,7 +331,7 @@ class IDIToCDLL(object):
     """
     def __init__(self, target):
         self.target = target
-        self.registry = target.get_dtype_registry().wrapped_registry
+        self.registry = target.get_dtype_registry()
 
     def __call__(self, knl, idi):
         # next loop through the implemented data info to get the arg data

@@ -133,7 +133,7 @@ def test_ispc_target_strides_nonsquare():
 def test_ispc_optimizations():
     def __get_kernel(order='C'):
         indicies = ['i', 'j', 'k']
-        sizes = tuple(np.random.randint(1, 11, size=len(indicies)))
+        sizes = tuple(np.random.randint(4, 11, size=len(indicies)))
         # create domain strings
         domain_template = '{{ [{iname}]: 0 <= {iname} < {size} }}'
         domains = []

@@ -26,8 +26,7 @@ THE SOFTWARE.
 
 
 import numpy as np  # noqa
-from loopy.target.c import (CTarget, CASTBuilder, CASTIdentityMapper,
-                            CFunctionDeclExtractor)
+from loopy.target.c import (ExecutableCTarget, CASTBuilder, CASTIdentityMapper)
 from loopy.target.c.codegen.expression import ExpressionToCExpressionMapper
 from loopy.diagnostic import LoopyError
 from loopy.symbolic import Literal
@@ -155,13 +154,15 @@ def fill_registry_with_ispc_types(reg, respect_windows, include_bool=True):
 # }}}
 
 
-class ISPCTarget(CTarget):
+class ISPCTarget(ExecutableCTarget):
     """A code generation target for Intel's `ISPC <https://ispc.github.io/>`_
     SPMD programming language, to target Intel's Knight's hardware and modern
     Intel CPUs with wide vector units.
     """
 
-    def __init__(self, occa_mode=False, compiler=None):
+    from loopy.target.ispc_execution import ISPCCompiler
+
+    def __init__(self, occa_mode=False, compiler=ISPCCompiler()):
         """
         :arg occa_mode: Whether to modify the generated call signature to
             be compatible with OCCA
@@ -171,7 +172,7 @@ class ISPCTarget(CTarget):
         self.occa_mode = occa_mode
         self.compiler = compiler
 
-        super(ISPCTarget, self).__init__()
+        super(ISPCTarget, self).__init__(compiler=self.compiler)
 
     host_program_name_suffix = ""
     device_program_name_suffix = "_inner"

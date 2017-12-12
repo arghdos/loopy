@@ -193,6 +193,11 @@ class ISPCCompiler(CCompiler):
             target_flags = ['--target', '{0}-i{1}x{2}'.format(
                 target_name, addressing_width, vector_width)]
 
+        self.use_openmp = use_openmp
+        self.target_name = target_name
+        self.vector_width = vector_width
+        self.addressing_width = addressing_width
+
         toolchain_defaults = _guess_toolchain_kwargs_from_python_config()
         cppflags = ['-O3', '-fPIC', ('-fopenmp' if use_openmp else 'pthread')]
         toolchain_kwargs = dict(
@@ -213,6 +218,10 @@ class ISPCCompiler(CCompiler):
         )
         defaults = {'toolchain': ISPCToolchain(**toolchain_kwargs),
                     'source_suffix': 'ispc',
+                    'use_openmp': use_openmp,
+                    'target_name': target_name,
+                    'vector_width': vector_width,
+                    'addressing_width': addressing_width
                     }
 
         # and create

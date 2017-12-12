@@ -23,18 +23,15 @@ THE SOFTWARE.
 """
 
 import tempfile
-import cgen
 import os
 
 from loopy.target.execution import (KernelExecutorBase, _KernelInfo,
-                                    ExecutionWrapperGeneratorBase)
-from loopy.target.c import CTarget
+    ExecutionWrapperGeneratorBase, get_highlighted_code)
 from pytools import memoize_method
 from pytools.py_codegen import (Indentation)
 from codepy.toolchain import guess_toolchain
 from codepy.jit import compile_from_string
 import six
-import weakref
 import ctypes
 
 import numpy as np
@@ -57,7 +54,7 @@ class CExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
     def python_dtype_str(self, dtype):
         if np.dtype(str(dtype)).isbuiltin:
             return "_lpy_np."+dtype.name
-        raise Exception('dtype: {} not recognized'.format(dtype))
+        raise Exception('dtype: {0} not recognized'.format(dtype))
 
     # {{{ handle non numpy arguements
 
@@ -171,6 +168,9 @@ class CExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
     # }}}
 
     def generate_host_code(self, gen, codegen_result):
+        # "host" code for C is embedded in the same file as the "device" code
+        # this will enable a logical jumping off point for global barriers for
+        # OpenMP, etc.
         pass
 
     def get_arg_pass(self, arg):
@@ -200,7 +200,7 @@ class CCompiler(object):
     """
 
     def __init__(self, toolchain=None,
-                 cc='gcc', cflags='-std=c99 -g -O3 -fPIC'.split(),
+                 cc='gcc', cflags='-std=c99 -O3 -fPIC'.split(),
                  ldflags='-shared'.split(), libraries=[],
                  include_dirs=[], library_dirs=[], defines=[],
                  source_suffix='c'):
@@ -231,6 +231,14 @@ class CCompiler(object):
         """Build temporary filename path in tempdir."""
         return os.path.join(self.tempdir, name)
 
+    def _log_compilation(self, recompiled, btype='object'):
+        if not recompiled:
+            logger.debug('{0} for kernel {1} compiled from source'.format(
+                btype.title(), name))
+        else:
+            logger.debug('{0} for kernel {1} retrieved from cache'.format(
+                btype.title(), name))
+
     @memoize_method
     def _build_obj(self, name, code, source_name,
                    debug=False, wait_on_error=None, debug_recompile=True):
@@ -242,9 +250,7 @@ class CCompiler(object):
             compile_from_string(self.toolchain, name, code, source_name,
                                 self.tempdir, debug, wait_on_error,
                                 debug_recompile, True)
-        if not recompiled:
-            logger.debug('Kernel {} compiled from source'.format(name))
-
+        self._log_compilation(recompiled, 'object')
         return obj_checksum, obj_file
 
     @memoize_method
@@ -270,10 +276,8 @@ class CCompiler(object):
                                 self.tempdir, debug, wait_on_error,
                                 debug_recompile, object=False,
                                 source_is_binary=True)
-        if not recompiled:
-            logger.debug('Kernel {} compiled from source'.format(name))
-
-        return so_checksum, ctypes.CDLL(so_file)
+        self._log_compilation(recompiled, 'library')
+        return so_checksum, so_file
 
     def build(self, name, code, debug=False, wait_on_error=None,
               debug_recompile=True):
@@ -289,15 +293,14 @@ class CCompiler(object):
         _, lib = self._build_lib(name, obj_file, debug=debug,
                               wait_on_error=wait_on_error,
                               debug_recompile=debug_recompile)
-
-        # and return compiled
-        return lib
+        # and return CDLL
+        return ctypes.CDLL(lib)
 
 
 class CPlusPlusCompiler(CCompiler):
     """Subclass of CCompiler to invoke a C++ compiler."""
 
-    def __init__(self, cc='g++', cflags='',
+    def __init__(self, cc='g++', cflags='-std=c++98 -O3 -fPIC'.split(),
                  ldflags=[], libraries=[],
                  include_dirs=[], library_dirs=[], defines=[],
                  source_suffix='cpp'):
@@ -306,6 +309,35 @@ class CPlusPlusCompiler(CCompiler):
             cc=cc, cflags=cflags, ldflags=ldflags, libraries=libraries,
             include_dirs=include_dirs, library_dirs=library_dirs,
             defines=defines, source_suffix=source_suffix)
+
+
+class IDIToCDLL(object):
+    """
+    A utility class that extracts arguement and return type info from a
+    :class:`ImplementedDataInfo` in order to create a :class:`ctype.CDLL`
+    """
+    def __init__(self, target):
+        self.target = target
+        self.registry = target.get_dtype_registry().wrapped_registry
+
+    def __call__(self, knl, idi):
+        # next loop through the implemented data info to get the arg data
+        arg_info = []
+        for arg in idi:
+            # check if pointer
+            pointer = arg.shape
+            arg_info.append(self._dtype_to_ctype(arg.dtype, pointer))
+
+        return arg_info
+
+    def _dtype_to_ctype(self, dtype, pointer=False):
+        """Map NumPy dtype to equivalent ctypes type."""
+        typename = self.registry.dtype_to_ctype(dtype)
+        typename = {'unsigned': 'uint'}.get(typename, typename)
+        basetype = getattr(ctypes, 'c_' + typename)
+        if pointer:
+            return ctypes.POINTER(basetype)
+        return basetype
 
 
 class CompiledCKernel(object):
@@ -317,50 +349,33 @@ class CompiledCKernel(object):
     to automatically map argument types.
     """
 
-    def __init__(self, knl, dev_code='', host_code='',
-                 host_name='', target=CTarget(), comp=None):
-        assert isinstance(target, CTarget)
+    def __init__(self, knl, idi, host_code, dev_code, target, comp=CCompiler()):
+        from loopy.target.c import ExecutableCTarget
+        assert isinstance(target, ExecutableCTarget)
         self.target = target
-        self.knl = knl
+        self.name = knl.name
         # get code and build
-        self.dev_code = dev_code
-        self.host_code = host_code
-        self.host_name = host_name
-        self.code = self._get_code()
-        self.comp = comp or CCompiler()
-        self.dll = self.comp.build(self.knl.name, self.code)
+        self.code = '\n'.join([dev_code, host_code])
+        self.comp = comp
+        self.dll = self.comp.build(self.name, self.code)
 
         # get the function declaration for interface with ctypes
-        self.func_decl = self._get_extractor()
-        self.func_decl(knl.ast)
-        self.func_decl = self.func_decl.decls[0]
-        self._arg_info = []
-        # TODO knl.args[:].dtype is sufficient
-        self._visit_func_decl(self.func_decl)
-        self.name = self.knl.name
-        restype = self.func_decl.subdecl.typename
-        if restype == 'void':
-            self.restype = None
-        else:
-            raise ValueError('Unhandled restype %r' % (restype, ))
-        self._fn = getattr(self.dll, self._get_linking_name())
-        self._fn.restype = self.restype
-        self._fn.argtypes = [ctype for name, ctype in self._arg_info]
-        self._prepared_call_cache = weakref.WeakKeyDictionary()
+        func_decl = self._get_extractor(self.target)
+        arg_info = func_decl(knl, idi)
+        self._fn = getattr(self.dll, self.name)
+        # kernels are void by defn.
+        self._fn.restype = None
+        self._fn.argtypes = [ctype for ctype in arg_info]
 
-    def _get_linking_name(self):
+    def _get_name(self):
         """ return device program name for C-kernel """
         return self.knl.name
 
-    def _get_code(self):
-        """ No 'host' for C-only """
-        return self.dev_code
-
-    def _get_extractor(self):
+    def _get_extractor(self, target):
         """ Returns the correct function decl extractor depending on target
-            type"""
-        from loopy.target.c import CFunctionDeclExtractor
-        return CFunctionDeclExtractor()
+            type (in case we need to subclass this later)
+        """
+        return IDIToCDLL(target)
 
     def __call__(self, *args):
         """Execute kernel with given args mapped to ctypes equivalents."""
@@ -376,47 +391,6 @@ class CompiledCKernel(object):
                 arg_ = arg_t(arg)
             args_.append(arg_)
         self._fn(*args_)
-
-    def _append_arg(self, name, dtype, pointer=False):
-        """Append arg info to current argument list."""
-        self._arg_info.append((
-            name,
-            self._dtype_to_ctype(dtype, pointer=pointer)
-        ))
-
-    def _visit_const(self, node):
-        """Visit const arg of kernel."""
-        if isinstance(node.subdecl, cgen.RestrictPointer):
-            self._visit_pointer(node.subdecl)
-        else:
-            pod = node.subdecl  # type: cgen.POD
-            self._append_arg(pod.name, pod.dtype)
-
-    def _visit_pointer(self, node):
-        """Visit pointer argument of kernel."""
-        pod = node.subdecl  # type: cgen.POD
-        self._append_arg(pod.name, pod.dtype, pointer=True)
-
-    def _visit_func_decl(self, func_decl):
-        """Visit nodes of function declaration of kernel."""
-        for i, arg in enumerate(func_decl.arg_decls):
-            if isinstance(arg, cgen.Const):
-                self._visit_const(arg)
-            elif isinstance(arg, cgen.RestrictPointer):
-                self._visit_pointer(arg)
-            else:
-                raise ValueError('unhandled type for arg %r' % (arg, ))
-
-    def _dtype_to_ctype(self, dtype, pointer=False):
-        """Map NumPy dtype to equivalent ctypes type."""
-        target = self.target  # type: CTarget
-        registry = target.get_dtype_registry().wrapped_registry
-        typename = registry.dtype_to_ctype(dtype)
-        typename = {'unsigned': 'uint'}.get(typename, typename)
-        basetype = getattr(ctypes, 'c_' + typename)
-        if pointer:
-            return ctypes.POINTER(basetype)
-        return basetype
 
 
 class CKernelExecutor(KernelExecutorBase):
@@ -451,11 +425,13 @@ class CKernelExecutor(KernelExecutorBase):
         codegen_result = generate_code_v2(kernel)
 
         dev_code = codegen_result.device_code()
+        host_code = codegen_result.host_code()
+        all_code = '\n'.join([dev_code, '', host_code])
 
         if self.kernel.options.write_cl:
-            output = dev_code
+            output = all_code
             if self.kernel.options.highlight_cl:
-                output = self.get_highlighted_code(output)
+                output = get_highlighted_code(code=output)
 
             if self.kernel.options.write_cl is True:
                 print(output)
@@ -466,11 +442,14 @@ class CKernelExecutor(KernelExecutorBase):
         if self.kernel.options.edit_cl:
             from pytools import invoke_editor
             dev_code = invoke_editor(dev_code, "code.c")
+            # update code from editor
+            all_code = '\n'.join([dev_code, '', host_code])
 
         c_kernels = []
         for dp in codegen_result.device_programs:
             c_kernels.append(self.get_compiled(
-                             dp, dev_code=dev_code,
+                             dp, codegen_result.implemented_data_info,
+                             dev_code=dev_code,
                              host_code=codegen_result.host_code(),
                              host_name=codegen_result.host_program.name,
                              target=self.kernel.target,

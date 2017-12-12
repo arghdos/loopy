@@ -30,6 +30,13 @@ from loopy.diagnostic import LoopyError
 from pytools.py_codegen import (
         Indentation, PythonFunctionGenerator)
 
+import logging
+logger = logging.getLogger(__name__)
+
+from pytools.persistent_dict import WriteOncePersistentDict
+from loopy.tools import LoopyKeyBuilder
+from loopy.version import DATA_MODEL_VERSION
+
 
 # {{{ object array argument packing
 
@@ -419,7 +426,8 @@ class ExecutionWrapperGeneratorBase(object):
             # {{{ allocate written arrays, if needed
 
             if is_written and arg.arg_class in [lp.GlobalArg, lp.ConstantArg] \
-                    and arg.shape is not None:
+                    and arg.shape is not None \
+                    and all(si is not None for si in arg.shape):
 
                 if not isinstance(arg.dtype, NumpyType):
                     raise LoopyError("do not know how to pass arg of type '%s'"
@@ -578,7 +586,7 @@ class ExecutionWrapperGeneratorBase(object):
     # }}}
 
     def generate_host_code(self, gen, codegen_result):
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def __call__(self, kernel, codegen_result):
         """
@@ -601,7 +609,7 @@ class ExecutionWrapperGeneratorBase(object):
                     "%s=None" % idi.name
                     for idi in implemented_data_info
                     if issubclass(idi.arg_class, KernelArgument)
-                    ] + ['**kwargs'])
+                    ])
 
         gen.add_to_preamble("from __future__ import division")
         gen.add_to_preamble("")
@@ -641,6 +649,7 @@ class ExecutionWrapperGeneratorBase(object):
 
         return gen.get_function()
 
+# }}}
 
 # }}}
 
@@ -651,6 +660,11 @@ class _KernelInfo(ImmutableRecord):
 
 class _Kernels(object):
     pass
+
+
+typed_and_scheduled_cache = WriteOncePersistentDict(
+        "loopy-typed-and-scheduled-cache-v1-"+DATA_MODEL_VERSION,
+        key_builder=LoopyKeyBuilder())
 
 
 # {{{ kernel executor
@@ -681,15 +695,14 @@ class KernelExecutorBase(object):
 
         self.invoker = invoker
 
-    @memoize_method
-    def get_typed_and_scheduled_kernel(self, var_to_dtype_set):
-        kernel = self.kernel
-
+    def get_typed_and_scheduled_kernel_uncached(self, arg_to_dtype_set):
         from loopy.kernel.tools import add_dtypes
 
-        if var_to_dtype_set:
+        kernel = self.kernel
+
+        if arg_to_dtype_set:
             var_to_dtype = {}
-            for var, dtype in var_to_dtype_set:
+            for var, dtype in arg_to_dtype_set:
                 try:
                     dest_name = kernel.impl_arg_to_arg[var].name
                 except KeyError:
@@ -713,6 +726,30 @@ class KernelExecutorBase(object):
 
             from loopy.schedule import get_one_scheduled_kernel
             kernel = get_one_scheduled_kernel(kernel)
+
+        return kernel
+
+    def get_typed_and_scheduled_kernel(self, arg_to_dtype_set):
+        from loopy import CACHING_ENABLED
+
+        from loopy.preprocess import prepare_for_caching
+        # prepare_for_caching() gets run by preprocess, but the kernel at this
+        # stage is not guaranteed to be preprocessed.
+        cacheable_kernel = prepare_for_caching(self.kernel)
+        cache_key = (type(self).__name__, cacheable_kernel, arg_to_dtype_set)
+
+        if CACHING_ENABLED:
+            try:
+                return typed_and_scheduled_cache[cache_key]
+            except KeyError:
+                pass
+
+        logger.debug("%s: typed-and-scheduled cache miss" % self.kernel.name)
+
+        kernel = self.get_typed_and_scheduled_kernel_uncached(arg_to_dtype_set)
+
+        if CACHING_ENABLED:
+            typed_and_scheduled_cache.store_if_not_present(cache_key, kernel)
 
         return kernel
 
@@ -741,13 +778,24 @@ class KernelExecutorBase(object):
 
     # {{{ debugging aids
 
-    def get_highlighted_code(self, arg_to_dtype=None):
-        return get_highlighted_code(
-                self.get_code(arg_to_dtype))
+    def get_highlighted_code(self, arg_to_dtype=None, code=None):
+        if code is None:
+            code = self.get_code(arg_to_dtype)
+        return get_highlighted_code(code)
 
     def get_code(self, arg_to_dtype=None):
+        def process_dtype(dtype):
+            if isinstance(dtype, type) and issubclass(dtype, np.generic):
+                dtype = np.dtype(dtype)
+            if isinstance(dtype, np.dtype):
+                from loopy.types import NumpyType
+                dtype = NumpyType(dtype, self.kernel.target)
+
+            return dtype
+
         if arg_to_dtype is not None:
-            arg_to_dtype = frozenset(six.iteritems(arg_to_dtype))
+            arg_to_dtype = frozenset(
+                    (k, process_dtype(v)) for k, v in six.iteritems(arg_to_dtype))
 
         kernel = self.get_typed_and_scheduled_kernel(arg_to_dtype)
 

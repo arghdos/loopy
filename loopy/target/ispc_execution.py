@@ -24,12 +24,9 @@ THE SOFTWARE.
 
 from loopy.target.c.c_execution import (CKernelExecutor, CCompiler,
                                         CExecutionWrapperGenerator, CompiledCKernel)
-from loopy.target.ispc import ISPCCFunctionDeclExtractor
 from codepy.toolchain import (GCCLikeToolchain, Toolchain,
                               _guess_toolchain_kwargs_from_python_config,
                               call_capture_output, CompileError)
-import cgen
-import ctypes
 import os
 
 
@@ -298,73 +295,6 @@ class ISPCKernelExecutor(CKernelExecutor):
 
 
 class CompiledISPCKernel(CompiledCKernel):
-
     def _get_linking_name(self):
         """ return host program name for ISPC-kernel """
         return self.host_name
-
-    def _get_code(self):
-        # need to include the launcher
-        code = '\n'.join([self.dev_code, self.host_code])
-        # next search for duplicated temporary names
-        import re
-        from cgen import Initializer, Collection
-        if isinstance(self.knl.ast, Collection):
-            # have temporaries
-            temp_names = [re.compile(r'[\w\d]+ %(name)s\[[\d\*\s]+\]' % {
-                                'name': x.vdecl.subdecl.name})
-                          for x in self.knl.ast.contents
-                          if isinstance(x, Initializer)]
-
-            temp_set = set()
-            out_lines = []
-            for line in code.split('\n'):
-                if any(x.search(line) for x in temp_names):
-                    if line in temp_set:
-                        continue
-                    else:
-                        temp_set.update([line])
-                out_lines.append(line)
-
-            return '\n'.join(out_lines)
-        else:
-            return code
-
-    def _get_extractor(self):
-        """ Returns the correct function decl extractor depending on target
-            type"""
-        return ISPCCFunctionDeclExtractor()
-
-    def _visit_const(self, node):
-        """Visit const arg of kernel."""
-        # check the entire subdecl for ISPCUniformPointer
-
-        pod = node
-        while hasattr(pod, 'subdecl'):
-            pod = pod.subdecl
-            if isinstance(pod, cgen.ispc.ISPCUniformPointer):
-                return self._visit_pointer(pod)
-
-        # if not found, use POD
-        self._append_arg(pod.name, pod.dtype)
-
-    def _visit_func_decl(self, func_decl):
-        """Visit nodes of function declaration of kernel."""
-        for i, arg in enumerate(func_decl.arg_decls):
-            if isinstance(arg, cgen.ispc.ISPCUniform):
-                self._visit_const(arg)
-            elif isinstance(arg, cgen.RestrictPointer):
-                self._visit_pointer(arg)
-            else:
-                raise ValueError('unhandled type for arg %r' % (arg, ))
-
-    def _dtype_to_ctype(self, dtype, pointer=False):
-        """Map NumPy dtype to equivalent ctypes type."""
-        target = self.target  # type: ISPCTarget
-        registry = target.get_dtype_registry()
-        typename = registry.dtype_to_ctype(dtype)
-        typename = {'unsigned': 'uint'}.get(typename, typename)
-        basetype = getattr(ctypes, 'c_' + typename)
-        if pointer:
-            return ctypes.POINTER(basetype)
-        return basetype

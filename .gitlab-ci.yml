@@ -69,6 +69,7 @@ Python 2.7 with legacy PyOpenCL:
   - pocl
   except:
   - tags
+  retry: 2
 
 Python 3.6 POCL:
   script:
@@ -77,6 +78,23 @@ Python 3.6 POCL:
   - export EXTRA_INSTALL="numpy mako"
   - export LOOPY_NO_CACHE=1
   - export NO_DOCTESTS=1
+  - curl -L -O -k https://gitlab.tiker.net/inducer/ci-support/raw/master/build-and-test-py-project.sh
+  - ". ./build-and-test-py-project.sh"
+  tags:
+  - python3.6
+  - pocl
+  except:
+  - tags
+
+Python 3.6 POCL Twice With Cache:
+  script:
+  - export PY_EXE=python3.6
+  - export PYOPENCL_TEST=portable
+  - export EXTRA_INSTALL="numpy mako"
+  - export NO_DOCTESTS=1
+  - curl -L -O -k https://gitlab.tiker.net/inducer/ci-support/raw/master/build-and-test-py-project.sh
+  - ". ./build-and-test-py-project.sh"
+  - "cd .."
   - curl -L -O -k https://gitlab.tiker.net/inducer/ci-support/raw/master/build-and-test-py-project.sh
   - ". ./build-and-test-py-project.sh"
   tags:

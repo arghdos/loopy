@@ -217,15 +217,15 @@ def test_bad_vecsize_fails():
 
 
 @pytest.mark.parametrize('vec_width', [4, 8, 16])
-@pytest.mark.parametrize('target', ['sse2', 'sse4', 'avx1', 'av2'])
+@pytest.mark.parametrize('target_name', ['sse2', 'sse4', 'avx1', 'av2'])
 @pytest.mark.parametrize('n', [10, 100])
-def test_ispc_vector_sizes_and_targets(vec_width, target, n):
+def test_ispc_vector_sizes_and_targets(vec_width, target_name, n):
     from loopy.target.ispc_execution import ISPCCompiler
 
-    if target == 'sse4' and vec_width == 16:
+    if 'sse' in target_name and vec_width == 16:
         pytest.skip('Not recognized by ispc')
 
-    compiler = ISPCCompiler(vector_width=vec_width, target=target)
+    compiler = ISPCCompiler(vector_width=vec_width, target_name=target_name)
     target = ISPCTarget(compiler=compiler)
 
     knl = lp.make_kernel(

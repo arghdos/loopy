@@ -241,7 +241,7 @@ def test_c_caching():
 
             return self.buffer.getvalue()
 
-    def __get_knl():
+    def __get_knl(namemod=''):
         return lp.make_kernel('{[i]: 0 <= i < 10}',
         """
             a[i] = b[i]
@@ -249,7 +249,7 @@ def test_c_caching():
         [lp.GlobalArg('a', shape=(10,), dtype=np.int32),
          lp.ConstantArg('b', shape=(10))],
                              target=ExecutableCTarget(),
-                             name='cache_test')
+                             name='cache_test' + namemod)
 
     knl = __get_knl()
     # compile
@@ -258,12 +258,13 @@ def test_c_caching():
     tl = TestingLogger()
     tl.start_capture()
     # remake kernel to clear cache
-    knl = __get_knl()
+    knl = __get_knl('1')
     assert np.allclose(knl(b=np.arange(10))[1], np.arange(10))
     # and get logs
     logs = tl.stop_capture()
     # check that we didn't recompile
-    assert 'Kernel cache_test retrieved from cache' in logs
+    assert 'Object for kernel cache_test1 retrieved from cache' in logs
+    assert 'Library for kernel cache_test1 retrieved from cache' in logs
 
 
 def test_c_execution_with_global_temporaries():

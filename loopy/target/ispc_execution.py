@@ -28,6 +28,7 @@ from codepy.toolchain import (GCCLikeToolchain, Toolchain,
                               _guess_toolchain_kwargs_from_python_config,
                               call_capture_output, CompileError)
 import os
+import ctypes
 
 
 class ISPCToolchain(GCCLikeToolchain):
@@ -263,7 +264,7 @@ class ISPCCompiler(CCompiler):
                               wait_on_error=wait_on_error,
                               debug_recompile=debug_recompile)
 
-        return lib
+        return ctypes.CDLL(lib)
 
 
 class ISPCKernelExecutor(CKernelExecutor):

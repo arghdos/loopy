@@ -349,13 +349,18 @@ class CompiledCKernel(object):
     to automatically map argument types.
     """
 
-    def __init__(self, knl, idi, host_code, dev_code, target, comp=CCompiler()):
+    def __init__(self, knl, idi, host_code, dev_code,
+                 dev_name, host_name, target, comp=CCompiler()):
         from loopy.target.c import ExecutableCTarget
         assert isinstance(target, ExecutableCTarget)
         self.target = target
-        self.name = knl.name
+        self.host_name = host_name
+        self.host_code = host_code
+        self.dev_name = dev_name
+        self.dev_code = dev_code
+        self.name = self._get_name()
         # get code and build
-        self.code = '\n'.join([dev_code, host_code])
+        self.code = self._get_code()
         self.comp = comp
         self.dll = self.comp.build(self.name, self.code)
 
@@ -369,7 +374,14 @@ class CompiledCKernel(object):
 
     def _get_name(self):
         """ return device program name for C-kernel """
-        return self.knl.name
+        return self.dev_name
+
+    def _get_code(self):
+        """
+        Combine the host / device code as needed for this target
+        """
+
+        return '\n'.join([self.dev_code, self.host_code])
 
     def _get_extractor(self, target):
         """ Returns the correct function decl extractor depending on target
@@ -442,8 +454,6 @@ class CKernelExecutor(KernelExecutorBase):
         if self.kernel.options.edit_cl:
             from pytools import invoke_editor
             dev_code = invoke_editor(dev_code, "code.c")
-            # update code from editor
-            all_code = '\n'.join([dev_code, '', host_code])
 
         c_kernels = []
         for dp in codegen_result.device_programs:
@@ -451,6 +461,7 @@ class CKernelExecutor(KernelExecutorBase):
                              dp, codegen_result.implemented_data_info,
                              dev_code=dev_code,
                              host_code=codegen_result.host_code(),
+                             dev_name=dp.name,
                              host_name=codegen_result.host_program.name,
                              target=self.kernel.target,
                              comp=self.compiler))

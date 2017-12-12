@@ -295,6 +295,6 @@ class ISPCKernelExecutor(CKernelExecutor):
 
 
 class CompiledISPCKernel(CompiledCKernel):
-    def _get_linking_name(self):
+    def _get_name(self):
         """ return host program name for ISPC-kernel """
         return self.host_name

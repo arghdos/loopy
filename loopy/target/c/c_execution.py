@@ -231,7 +231,7 @@ class CCompiler(object):
         """Build temporary filename path in tempdir."""
         return os.path.join(self.tempdir, name)
 
-    def _log_compilation(self, recompiled, btype='object'):
+    def _log_compilation(self, recompiled, btype, name):
         if not recompiled:
             logger.debug('{0} for kernel {1} compiled from source'.format(
                 btype.title(), name))
@@ -250,7 +250,7 @@ class CCompiler(object):
             compile_from_string(self.toolchain, name, code, source_name,
                                 self.tempdir, debug, wait_on_error,
                                 debug_recompile, True)
-        self._log_compilation(recompiled, 'object')
+        self._log_compilation(recompiled, 'object', name)
         return obj_checksum, obj_file
 
     @memoize_method
@@ -276,7 +276,7 @@ class CCompiler(object):
                                 self.tempdir, debug, wait_on_error,
                                 debug_recompile, object=False,
                                 source_is_binary=True)
-        self._log_compilation(recompiled, 'library')
+        self._log_compilation(recompiled, 'library', name)
         return so_checksum, so_file
 
     def build(self, name, code, debug=False, wait_on_error=None,

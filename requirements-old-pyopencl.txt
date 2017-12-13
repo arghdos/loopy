@@ -9,3 +9,7 @@ hg+https://bitbucket.org/inducer/f2py
 
 # Optional, needed for using the C preprocessor on Fortran
 ply>=3.6
+
+# Optional, needed for ispc-testing
+cython>=0.18
+git+https://github.com/matthew-brett/x86cpu

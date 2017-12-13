@@ -9,6 +9,7 @@ Python 2.7 AMD CPU:
   tags:
   - python2.7
   - amd-cl-cpu
+  - ispc
   except:
   - tags
 
@@ -23,6 +24,7 @@ Python 2.6 POCL:
   tags:
   - python2.6
   - pocl
+  - ispc
   except:
   - tags
 
@@ -38,6 +40,7 @@ Python 3.5 AMD CPU:
   tags:
   - python3.5
   - amd-cl-cpu
+  - ispc
   except:
   - tags
 
@@ -52,6 +55,7 @@ Python 2.7 POCL:
   tags:
   - python2.7
   - pocl
+  - ispc
   except:
   - tags
 
@@ -83,6 +87,7 @@ Python 3.6 POCL:
   tags:
   - python3.6
   - pocl
+  - ispc
   except:
   - tags
 

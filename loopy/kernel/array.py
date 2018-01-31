@@ -1245,6 +1245,31 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
 
         return result
 
+    def depends_only_on(idx, iname):
+        """
+        Test if the given iname is the only variable in idx
+        """
+
+        from pymbolic.mapper import WalkMapper
+        from pymbolic.primitives import Variable
+
+        class VariableMapper(WalkMapper):
+            def __init__(self, *args, **kwargs):
+                self.variables = set()
+                super(VariableMapper, self).__init__(*args, **kwargs)
+
+            def visit(self, expr, *args, **kwargs):
+                if isinstance(expr, Variable):
+                    self.variables.add(expr.name)
+                return True
+
+        # feed through mapper
+        mapv = VariableMapper()
+        mapv(idx)
+        if len(mapv.variables) == 1 and iname in mapv.variables:
+            return True
+        return False
+
     def apply_offset(sub):
         import loopy as lp
 
@@ -1327,6 +1352,11 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
                 # We'll do absolutely nothing here, which will result
                 # in the vector being returned.
                 pass
+
+            elif (vectorization_info is not None and
+                  depends_only_on(index[i], vectorization_info.iname)):
+                assert vector_index is None
+                vector_index = idx
 
             else:
                 idx = eval_expr_assert_integer_constant(i, idx)

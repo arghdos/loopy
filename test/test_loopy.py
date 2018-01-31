@@ -2788,6 +2788,32 @@ def test_add_prefetch_works_in_lhs_index():
         assert "a1_map" not in get_dependencies(insn.assignees)
 
 
+def test_explicit_simd():
+    def create_and_test(insn):
+        knl = lp.make_kernel(['{[i]: 0 <= i < 12}', '{[j]: 0 <= j < 1}'],
+                             insn,
+                             [lp.GlobalArg('a', shape=(1, 12,), dtype=np.int32),
+                              lp.GlobalArg('b', shape=(1, 14,), dtype=np.int32)])
+
+        knl = lp.split_iname(knl, 'i', 4, inner_tag='vec')
+        knl = lp.tag_inames(knl, [('j', 'g.0')])
+        knl = lp.split_array_axis(knl, ['a', 'b'], 1, 4)
+        knl = lp.tag_array_axes(knl, ['a', 'b'], 'N1,N0,vec')
+
+        print(lp.generate_code_v2(knl).device_code())
+        ctx = cl.create_some_context()
+        queue = cl.CommandQueue(ctx)
+        assert np.array_equal(
+            knl(queue, a=np.zeros((1, 3, 4), dtype=np.int32),
+                b=np.arange(16, dtype=np.int32).reshape((1, 4, 4)))[1][0].flatten(
+                    'C'),
+            np.arange(2, 14, dtype=np.int32))
+
+    create_and_test("a[j, i] = b[j, i + 2]")
+    create_and_test("a[j, i] = b[j, i + 2] + a[j, i]")
+    create_and_test("a[j, i] = a[j, i] + b[j, i + 2]")
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         exec(sys.argv[1])

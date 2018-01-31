@@ -1250,25 +1250,10 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
         Test if the given iname is the only variable in idx
         """
 
-        from pymbolic.mapper import WalkMapper
-        from pymbolic.primitives import Variable
-
-        class VariableMapper(WalkMapper):
-            def __init__(self, *args, **kwargs):
-                self.variables = set()
-                super(VariableMapper, self).__init__(*args, **kwargs)
-
-            def visit(self, expr, *args, **kwargs):
-                if isinstance(expr, Variable):
-                    self.variables.add(expr.name)
-                return True
-
         # feed through mapper
-        mapv = VariableMapper()
-        mapv(idx)
-        if len(mapv.variables) == 1 and iname in mapv.variables:
-            return True
-        return False
+        from loopy.symbolic import get_dependencies
+        idx_vars = get_dependencies(idx)
+        return len(idx_vars) == 1 and iname in idx_vars
 
     def apply_offset(sub):
         import loopy as lp

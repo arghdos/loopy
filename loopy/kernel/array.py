@@ -1229,17 +1229,23 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
 
     def eval_expr_assert_integer_constant(i, expr):
         from pymbolic.mapper.evaluator import UnknownVariableError
+        from loopy.codegen import Unvectorizable
+        # determine error type -- if vectorization_info is None, we're in the
+        # unvec fallback (and should raise a LoopyError)
+        # if vectorization_info is not None, we should raise an Unvectorizable
+        # on failure
+        error_type = LoopyError if vectorization_info is None else Unvectorizable
         try:
             result = eval_expr(expr)
         except UnknownVariableError as e:
-            raise LoopyError("When trying to index the array '%s' along axis "
+            raise error_type("When trying to index the array '%s' along axis "
                     "%d (tagged '%s'), the index was not a compile-time "
                     "constant (but it has to be in order for code to be "
                     "generated). You likely want to unroll the iname(s) '%s'."
                     % (ary.name, i, ary.dim_tags[i], str(e)))
 
         if not is_integer(result):
-            raise LoopyError("subscript '%s[%s]' has non-constant "
+            raise error_type("subscript '%s[%s]' has non-constant "
                     "index for separate-array axis %d (0-based)" % (
                         ary.name, index, i))
 

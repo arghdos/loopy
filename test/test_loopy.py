@@ -2788,12 +2788,16 @@ def test_add_prefetch_works_in_lhs_index():
         assert "a1_map" not in get_dependencies(insn.assignees)
 
 
-def test_explicit_simd_shuffles():
-    def create_and_test(insn, answer=None):
+def test_explicit_simd_shuffles(ctx_factory):
+    ctx = ctx_factory()
+
+    def create_and_test(insn, answer=None, atomic=False):
         knl = lp.make_kernel(['{[i]: 0 <= i < 12}', '{[j]: 0 <= j < 1}'],
                              insn,
-                             [lp.GlobalArg('a', shape=(1, 12,), dtype=np.int32),
-                              lp.GlobalArg('b', shape=(1, 14,), dtype=np.int32)])
+                             [lp.GlobalArg('a', shape=(1, 12,), dtype=np.int32,
+                                           for_atomic=atomic),
+                              lp.GlobalArg('b', shape=(1, 14,), dtype=np.int32,
+                                           for_atomic=atomic)])
 
         knl = lp.split_iname(knl, 'i', 4, inner_tag='vec')
         knl = lp.tag_inames(knl, [('j', 'g.0')])
@@ -2801,7 +2805,6 @@ def test_explicit_simd_shuffles():
         knl = lp.tag_array_axes(knl, ['a', 'b'], 'N1,N0,vec')
 
         print(lp.generate_code_v2(knl).device_code())
-        ctx = cl.create_some_context()
         queue = cl.CommandQueue(ctx)
         if answer is None:
             answer = np.arange(2, 14, dtype=np.int32)
@@ -2817,6 +2820,13 @@ def test_explicit_simd_shuffles():
     # test small vector shuffle
     create_and_test("a[j, i] = b[j, (i + 2) % 4]",
                     np.arange(12, dtype=np.int32)[(np.arange(12) + 2) % 4])
+    # test atomics
+    temp = np.arange(12, dtype=np.int32)
+    answer = np.zeros(4, dtype=np.int32)
+    for i in range(4):
+        answer[i] = np.sum(temp[(i + 2) % 4::4])
+    create_and_test("a[j, (i + 2) % 4] = a[j, (i + 2) % 4] + b[j, i] {atomic}",
+                    answer, True)
 
 
 if __name__ == "__main__":

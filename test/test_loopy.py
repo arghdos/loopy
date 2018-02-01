@@ -2788,8 +2788,8 @@ def test_add_prefetch_works_in_lhs_index():
         assert "a1_map" not in get_dependencies(insn.assignees)
 
 
-def test_explicit_simd_offset():
-    def create_and_test(insn):
+def test_explicit_simd_shuffles():
+    def create_and_test(insn, answer=None):
         knl = lp.make_kernel(['{[i]: 0 <= i < 12}', '{[j]: 0 <= j < 1}'],
                              insn,
                              [lp.GlobalArg('a', shape=(1, 12,), dtype=np.int32),
@@ -2803,15 +2803,21 @@ def test_explicit_simd_offset():
         print(lp.generate_code_v2(knl).device_code())
         ctx = cl.create_some_context()
         queue = cl.CommandQueue(ctx)
+        if answer is None:
+            answer = np.arange(2, 14, dtype=np.int32)
         assert np.array_equal(
             knl(queue, a=np.zeros((1, 3, 4), dtype=np.int32),
                 b=np.arange(16, dtype=np.int32).reshape((1, 4, 4)))[1][0].flatten(
                     'C'),
-            np.arange(2, 14, dtype=np.int32))
+            answer)
 
     create_and_test("a[j, i] = b[j, i + 2]")
     create_and_test("a[j, i] = b[j, i + 2] + a[j, i]")
     create_and_test("a[j, i] = a[j, i] + b[j, i + 2]")
+    # test small vector shuffle
+    create_and_test("a[j, i] = b[j, (i + 2) % 4]",
+                    np.arange(16, dtype=np.int32)[(np.arange(16) + 2) % 4 +
+                                                  (np.arange(16) // 4) * 4])
 
 
 if __name__ == "__main__":

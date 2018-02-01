@@ -1238,11 +1238,15 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
         try:
             result = eval_expr(expr)
         except UnknownVariableError as e:
-            raise error_type("When trying to index the array '%s' along axis "
-                    "%d (tagged '%s'), the index was not a compile-time "
-                    "constant (but it has to be in order for code to be "
-                    "generated). You likely want to unroll the iname(s) '%s'."
-                    % (ary.name, i, ary.dim_tags[i], str(e)))
+            err_msg = ("When trying to index the array '%s' along axis "
+                       "%d (tagged '%s'), the index was not a compile-time "
+                       "constant (but it has to be in order for code to be "
+                       "generated)."
+                       % (ary.name, i, ary.dim_tags[i]))
+            if vectorization_info is not None:
+                # add bit about unrolling
+                err_msg += "You likely want to unroll the iname(s) '%s'" % str(e)
+            raise error_type(err_msg)
 
         if not is_integer(result):
             raise error_type("subscript '%s[%s]' has non-constant "

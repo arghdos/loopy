@@ -120,17 +120,18 @@ class VectorizabilityChecker(RecursiveMapper):
 
         possible = None
         for i in range(len(var.shape)):
-            if (
-                    isinstance(var.dim_tags[i], VectorArrayDimTag)
-                    and isinstance(index[i], Variable)
-                    and index[i].name == self.vec_iname):
+            # if index is exactly vector iname
+            if isinstance(var.dim_tags[i], VectorArrayDimTag) and (
+                    (isinstance(index[i], Variable)
+                     and index[i].name == self.vec_iname)):
                 if var.shape[i] != self.vec_iname_length:
                     raise Unvectorizable("vector length was mismatched")
 
                 if possible is None:
                     possible = True
 
-            else:
+            # of if not vector index, and vector iname is present
+            elif not isinstance(var.dim_tags[i], VectorArrayDimTag):
                 if self.vec_iname in get_dependencies(index[i]):
                     raise Unvectorizable("vectorizing iname '%s' occurs in "
                             "unvectorized subscript axis %d (1-based) of "

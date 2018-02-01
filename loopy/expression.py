@@ -75,7 +75,7 @@ class VectorizabilityChecker(RecursiveMapper):
         return reduce(and_, vectorizabilities)
 
     def map_sum(self, expr):
-        return any(self.rec(child) for child in expr.children)
+        return any([self.rec(child) for child in expr.children])
 
     map_product = map_sum
 

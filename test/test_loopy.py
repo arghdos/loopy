@@ -2788,7 +2788,7 @@ def test_add_prefetch_works_in_lhs_index():
         assert "a1_map" not in get_dependencies(insn.assignees)
 
 
-def test_explicit_simd():
+def test_explicit_simd_offset():
     def create_and_test(insn):
         knl = lp.make_kernel(['{[i]: 0 <= i < 12}', '{[j]: 0 <= j < 1}'],
                              insn,

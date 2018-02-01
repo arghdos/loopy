@@ -2816,8 +2816,7 @@ def test_explicit_simd_shuffles():
     create_and_test("a[j, i] = a[j, i] + b[j, i + 2]")
     # test small vector shuffle
     create_and_test("a[j, i] = b[j, (i + 2) % 4]",
-                    np.arange(16, dtype=np.int32)[(np.arange(16) + 2) % 4 +
-                                                  (np.arange(16) // 4) * 4])
+                    np.arange(12, dtype=np.int32)[(np.arange(12) + 2) % 4])
 
 
 if __name__ == "__main__":

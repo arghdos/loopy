@@ -250,7 +250,9 @@ class ExpressionToCExpressionMapper(IdentityMapper):
                         method, ind = access_info.vector_index
                         method = getattr(self.codegen_state.ast_builder,
                                           'add_vector_%s' % method)
-                        return method(result, ind)
+                        return method(result,
+                                      self.codegen_state.vectorization_info.iname,
+                                      ary, ind)
                     except AttributeError:
                         from loopy.codegen import Unvectorizable
                         raise Unvectorizable('Target %s has no map node for '

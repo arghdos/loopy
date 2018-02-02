@@ -453,12 +453,22 @@ class OpenCLCASTBuilder(CASTBuilder):
             lookup = __map(index)
         return access_expr.attr(lookup)
 
-    def add_vector_shuffle(self, access_expr, index):
+    def add_vector_shuffle(self, access_expr, vec_iname, array, index):
         # this can simply call a vector access with the index list
         return self.add_vector_access(access_expr, index)
 
-    def add_vector_load(self, access_expr, index):
-        raise NotImplementedError()
+    def add_vector_load(self, access_expr, vec_iname, array, index):
+        from pymbolic import substitute
+        # get ctype for casting
+        ctype = self.target.get_dtype_registry().dtype_to_ctype(array.dtype)
+        # get size of load in bytes
+        size = array.dtype.itemsize * len(index)
+        # and finally, convert the vector access expression to an index based expr
+        # such that we can take the index
+        # to do so, we substitute the vector iname -> 0 to eliminate any term
+        # involving it, and then substitute the first pre-computed index term
+        access_expr = substitute(access_expr, {vec_iname: 0}) + index[0]
+        return 'vload%i(%i, &((%s*)%s))' % (len(index), size, ctype, access_expr)
 
     def emit_barrier(self, synchronization_kind, mem_kind, comment):
         """

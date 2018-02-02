@@ -130,14 +130,32 @@ class VectorizabilityChecker(RecursiveMapper):
                 if possible is None:
                     possible = True
 
-            # of if not vector index, and vector iname is present
+            # or, if not vector index, and vector iname is present
             elif not isinstance(var.dim_tags[i], VectorArrayDimTag):
-                if self.vec_iname in get_dependencies(index[i]):
-                    raise Unvectorizable("vectorizing iname '%s' occurs in "
-                            "unvectorized subscript axis %d (1-based) of "
-                            "expression '%s'"
-                            % (self.vec_iname, i+1, expr))
-                    break
+                from loopy.symbolic import DependencyMapper
+                dep_mapper = DependencyMapper(composite_leaves=False)
+                deps = dep_mapper(index[i])
+                if self.vec_iname in set(x.name for x in deps):
+                    # check whether we can simplify out the vector iname
+                    context = {x: x for x in deps if x.name != self.vec_iname}
+                    from pymbolic import substitute
+                    from loopy.tools import is_integer
+                    for veci in range(self.vec_iname_length):
+                        ncontext = context.copy()
+                        ncontext[self.vec_iname] = veci
+                        try:
+                            idi = substitute(index[i], ncontext)
+                            if not is_integer(idi) and not all(
+                                    x in self.kernel.iname_to_tag
+                                    for x in get_dependencies(idi)):
+                                raise Unvectorizable(
+                                    "vectorizing iname '%s' occurs in "
+                                    "unvectorized subscript axis %d (1-based) of "
+                                    "expression '%s', and could not be simplified"
+                                    "to compile-time constants."
+                                    % (self.vec_iname, i+1, expr))
+                        except:
+                            break
 
         return bool(possible)
 

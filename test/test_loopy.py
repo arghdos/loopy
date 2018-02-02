@@ -2821,12 +2821,14 @@ def test_explicit_simd_shuffles(ctx_factory):
     create_and_test("a[j, i] = b[j, (i + 2) % 4]",
                     np.arange(12, dtype=np.int32)[(np.arange(12) + 2) % 4])
     # test atomics
-    temp = np.arange(12, dtype=np.int32)
-    answer = np.zeros(4, dtype=np.int32)
-    for i in range(4):
-        answer[i] = np.sum(temp[(i + 2) % 4::4])
-    create_and_test("a[j, (i + 2) % 4] = a[j, (i + 2) % 4] + b[j, i] {atomic}",
-                    answer, True)
+    from loopy import LoopyError
+    with pytest.raises(LoopyError):
+        temp = np.arange(12, dtype=np.int32)
+        answer = np.zeros(4, dtype=np.int32)
+        for i in range(4):
+            answer[i] = np.sum(temp[(i + 2) % 4::4])
+        create_and_test("a[j, (i + 2) % 4] = a[j, (i + 2) % 4] + b[j, i] {atomic}",
+                        answer, True)
 
 
 if __name__ == "__main__":

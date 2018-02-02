@@ -522,6 +522,10 @@ class OpenCLCASTBuilder(CASTBuilder):
         # FIXME: Could detect operations, generate atomic_{add,...} when
         # appropriate.
 
+        if codegen_state.vectorization_fallback or codegen_state.vectorization_info:
+            raise LoopyError('Atomic operators not yet implemented for '
+                             'explicit-SIMD vectorization')
+
         if isinstance(lhs_dtype, NumpyType) and lhs_dtype.numpy_dtype in [
                 np.int32, np.int64, np.float32, np.float64]:
             from cgen import Block, DoWhile, Assign

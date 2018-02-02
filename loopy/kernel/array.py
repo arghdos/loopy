@@ -1339,6 +1339,9 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
                 pass
 
             else:
+                # if vectorization_info is not None:
+
+
                 idx = eval_expr_assert_integer_constant(i, idx)
 
                 assert vector_index is None

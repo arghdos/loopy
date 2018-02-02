@@ -1312,6 +1312,28 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
 
     # }}}
 
+    def is_contiguous(arr):
+        sarr = sorted(arr)
+        return len(arr) == vector_size and (sarr[-1] - sarr[0] + 1) == vector_size
+
+    def is_monotonic(arr):
+        # check if array is monotonic increasing / decreasing
+        signs = [(arr[i + 1] - arr[i]) < 0 for i in range(len(arr) - 1)]
+        return all(s == signs[0] for s in signs[1:])
+
+    def run_over_vecrange(i, idx, base_subs):
+        evaled = []
+        for veci in range(vector_size):
+            try:
+                subsi = base_subs.copy()
+                subsi[vectorization_info.iname] = veci
+                evaled.append(eval_expr_assert_integer_constant(i, idx, **subsi))
+            except Unvectorizable:
+                pass
+        return evaled
+
+    vec_op_type = None
+
     # {{{ process remaining dim tags
 
     for i, (idx, dim_tag) in enumerate(zip(index, ary.dim_tags)):
@@ -1327,6 +1349,30 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
 
             elif stride is lp.auto:
                 stride = var(array_name + "_stride%d" % i)
+
+            if vectorization_info is not None and \
+                    vectorization_info.iname in get_dependencies(idx):
+                # need to determine here whether the vector iname is aligned with
+                # the vector size -> shuffle, or unaligned -> load
+
+                # TODO: need some way to pass in other inames here, such that
+                # we only eliminate truly "known" quantities
+                subs = {x: 0 for x in get_dependencies(idx)
+                        if x != vectorization_info.iname}
+                evaled = run_over_vecrange(i, idx, subs)
+                if is_monotonic(evaled):
+                    vec_op_type = 'shuffle' if all(x == evaled[0] for x in evaled) \
+                        else 'load'
+
+                    # update vector operation type if necessary
+                    if vector_index is not None and isinstance(vector_index, tuple):
+                        assert vector_index[0] is None
+                        vector_index = (vec_op_type, vector_index[1])
+                else:
+                    raise Unvectorizable('Vectorized iname %s present in '
+                        'unvectorized axis %s (1-based) access "%s", and not '
+                        'simplifiable to compile-time contigous access' % (
+                            vectorization_info.iname, i + 1, idx))
 
             subscripts[dim_tag.target_axis] += (stride // vector_size)*idx
 
@@ -1345,28 +1391,15 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
             else:
                 if vectorization_info is not None:
                     # check dependencies
-                    from loopy.symbolic import get_dependencies
                     deps = get_dependencies(idx)
                     if len(deps) == 1 and vectorization_info.iname in deps:
                         # we depend only on the vectorized iname -- see if we can
                         # simplify to a load / shuffle
-                        evaled = []
-                        for vec_i in range(vector_size):
-                            try:
-                                evaled.append(eval_expr_assert_integer_constant(
-                                    i, idx, **{vectorization_info.iname: vec_i}))
-                            except Unvectorizable:
-                                break
-
-                        seval = sorted(evaled)
-                        if len(evaled) == vector_size and (
-                                seval[-1] - seval[0] + 1) == vector_size:
+                        evaled = run_over_vecrange(i, idx, {})
+                        if is_contiguous(evaled):
                             # we can generate a load or shuffle depending on the
                             # alignment
-                            if seval[0] == 0:
-                                vector_index = ('shuffle', evaled)
-                            else:
-                                vector_index = ('load', evaled)
+                            vector_index = (vec_op_type, evaled)
 
                 if vector_index is None:
                     # if we haven't generated a load of shuffle...

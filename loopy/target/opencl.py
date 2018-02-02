@@ -440,7 +440,25 @@ class OpenCLCASTBuilder(CASTBuilder):
 
     def add_vector_access(self, access_expr, index):
         # The 'int' avoids an 'L' suffix for long ints.
-        return access_expr.attr("s%s" % hex(int(index))[2:])
+        def __map(ind, use_prefix=True):
+            strmap = 's%s' if use_prefix else '%s'
+            start = 2
+            return strmap % hex(int(ind))[start:]
+        try:
+            lookup = ''
+            for i, ind in enumerate(index):
+                lookup += __map(ind, not i)
+        except TypeError:
+            # not iterable
+            lookup = __map(index)
+        return access_expr.attr(lookup)
+
+    def add_vector_shuffle(self, access_expr, index):
+        # this can simply call a vector access with the index list
+        return self.add_vector_access(access_expr, index)
+
+    def add_vector_load(self, access_expr, index):
+        raise NotImplementedError()
 
     def emit_barrier(self, synchronization_kind, mem_kind, comment):
         """

@@ -244,6 +244,20 @@ class ExpressionToCExpressionMapper(IdentityMapper):
                 result = make_var(access_info.array_name)[self.rec(subscript, 'i')]
 
             if access_info.vector_index is not None:
+                if isinstance(access_info.vector_index, tuple):
+                    # check for specific vector access nodes
+                    try:
+                        method, ind = access_info.vector_index
+                        method = getattr(self.codegen_state.ast_builder,
+                                          'add_vector_%s' % method)
+                        return method(result, ind)
+                    except AttributeError:
+                        from loopy.codegen import Unvectorizable
+                        raise Unvectorizable('Target %s has no map node for '
+                            'method add_vector_%s' % (
+                                str(type(self.codegen_state.ast_builder)),
+                                method))
+
                 return self.codegen_state.ast_builder.add_vector_access(
                     result, access_info.vector_index)
             else:

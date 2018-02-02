@@ -109,10 +109,9 @@ class ExprToISPCExprMapper(ExpressionToCExpressionMapper):
             if lsize:
                 lsize, = lsize
                 from loopy.kernel.array import get_access_info
-                from pymbolic import evaluate
 
                 access_info = get_access_info(self.kernel.target, ary, expr.index,
-                    lambda expr: evaluate(expr, self.codegen_state.var_subst_map),
+                    self.codegen_state.var_subst_map.copy(),
                     self.codegen_state.vectorization_info)
 
                 subscript, = access_info.subscripts
@@ -390,14 +389,12 @@ class ISPCASTBuilder(CASTBuilder):
             ary = ecm.find_array(lhs)
 
             from loopy.kernel.array import get_access_info
-            from pymbolic import evaluate
-
             from loopy.symbolic import simplify_using_aff
             index_tuple = tuple(
                     simplify_using_aff(kernel, idx) for idx in lhs.index_tuple)
 
             access_info = get_access_info(kernel.target, ary, index_tuple,
-                    lambda expr: evaluate(expr, self.codegen_state.var_subst_map),
+                    self.codegen_state.var_subst_map.copy(),
                     codegen_state.vectorization_info)
 
             from loopy.kernel.data import GlobalArg, TemporaryVariable

@@ -1216,10 +1216,12 @@ class AccessInfo(ImmutableRecord):
     """
 
 
-def get_access_info(target, ary, index, eval_expr, vectorization_info):
+def get_access_info(target, ary, index, var_subst_map, vectorization_info):
     """
     :arg ary: an object of type :class:`ArrayBase`
     :arg index: a tuple of indices representing a subscript into ary
+    :arg var_subst_map: a context of variable substitutions from the calling codegen
+        state
     :arg vectorization_info: an instance of :class:`loopy.codegen.VectorizationInfo`,
         or *None*.
     """
@@ -1227,6 +1229,7 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
     import loopy as lp
     from pymbolic import var
     from loopy.codegen import Unvectorizable
+    from loopy.symbolic import get_dependencies
 
     def eval_expr_assert_integer_constant(i, expr, **kwargs):
         from pymbolic.mapper.evaluator import UnknownVariableError
@@ -1235,8 +1238,9 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
         # if vectorization_info is not None, we should raise an Unvectorizable
         # on failure
         error_type = LoopyError if vectorization_info is None else Unvectorizable
+        from pymbolic import evaluate
         try:
-            result = eval_expr(expr, **kwargs)
+            result = evaluate(expr, kwargs)
         except UnknownVariableError as e:
             err_msg = ("When trying to index the array '%s' along axis "
                        "%d (tagged '%s'), the index was not a compile-time "

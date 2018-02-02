@@ -1226,17 +1226,17 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
 
     import loopy as lp
     from pymbolic import var
+    from loopy.codegen import Unvectorizable
 
-    def eval_expr_assert_integer_constant(i, expr):
+    def eval_expr_assert_integer_constant(i, expr, **kwargs):
         from pymbolic.mapper.evaluator import UnknownVariableError
-        from loopy.codegen import Unvectorizable
         # determine error type -- if vectorization_info is None, we're in the
         # unvec fallback (and should raise a LoopyError)
         # if vectorization_info is not None, we should raise an Unvectorizable
         # on failure
         error_type = LoopyError if vectorization_info is None else Unvectorizable
         try:
-            result = eval_expr(expr)
+            result = eval_expr(expr, **kwargs)
         except UnknownVariableError as e:
             err_msg = ("When trying to index the array '%s' along axis "
                        "%d (tagged '%s'), the index was not a compile-time "
@@ -1339,13 +1339,35 @@ def get_access_info(target, ary, index, eval_expr, vectorization_info):
                 pass
 
             else:
-                # if vectorization_info is not None:
+                if vectorization_info is not None:
+                    # check dependencies
+                    from loopy.symbolic import get_dependencies
+                    deps = get_dependencies(idx)
+                    if len(deps) == 1 and vectorization_info.iname in deps:
+                        # we depend only on the vectorized iname -- see if we can
+                        # simplify to a load / shuffle
+                        evaled = []
+                        for vec_i in range(vector_size):
+                            try:
+                                evaled.append(eval_expr_assert_integer_constant(
+                                    i, idx, **{vectorization_info.iname: vec_i}))
+                            except Unvectorizable:
+                                break
 
+                        seval = sorted(evaled)
+                        if len(evaled) == vector_size and (
+                                seval[-1] - seval[0] + 1) == vector_size:
+                            # we can generate a load or shuffle depending on the
+                            # alignment
+                            if seval[0] == 0:
+                                vector_index = ('shuffle', evaled)
+                            else:
+                                vector_index = ('load', evaled)
 
-                idx = eval_expr_assert_integer_constant(i, idx)
-
-                assert vector_index is None
-                vector_index = idx
+                if vector_index is None:
+                    # if we haven't generated a load of shuffle...
+                    idx = eval_expr_assert_integer_constant(i, idx)
+                    vector_index = idx
 
         else:
             raise LoopyError("unsupported array dim implementation tag '%s' "

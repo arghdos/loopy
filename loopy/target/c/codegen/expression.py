@@ -189,8 +189,14 @@ class ExpressionToCExpressionMapper(IdentityMapper):
         index_tuple = tuple(
                 simplify_using_aff(self.kernel, idx) for idx in expr.index_tuple)
 
+        def eval_expr_overloadable(expr, **extra_kwds):
+            # load any extra substitutions supplied in get_access_info
+            var_subst_map = self.codegen_state.var_subst_map.copy()
+            var_subst_map.update(**extra_kwds)
+            return evaluate(expr, var_subst_map)
+
         access_info = get_access_info(self.kernel.target, ary, index_tuple,
-                lambda expr: evaluate(expr, self.codegen_state.var_subst_map),
+                eval_expr_overloadable,
                 self.codegen_state.vectorization_info)
 
         from loopy.kernel.data import (

@@ -1234,7 +1234,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
     from loopy.codegen import Unvectorizable
     from loopy.symbolic import get_dependencies
 
-    def eval_expr_assert_integer_constant(i, expr, **kwargs):
+    def eval_expr_assert_constant(i, expr, **kwargs):
         from pymbolic.mapper.evaluator import UnknownVariableError
         # determine error type -- if vectorization_info is None, we're in the
         # unvec fallback (and should raise a LoopyError)
@@ -1260,7 +1260,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
             from loopy.isl_helpers import simplify_via_aff
             result = simplify_via_aff(result)
 
-        if not is_integer(result):
+        if any([x not in compile_time_constants for x in get_dependencies(result)]):
             raise error_type("subscript '%s[%s]' has non-constant "
                     "index for separate-array axis %d (0-based)" % (
                         ary.name, index, i))
@@ -1314,18 +1314,28 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
 
     for i, (idx, dim_tag) in enumerate(zip(index, ary.dim_tags)):
         if isinstance(dim_tag, SeparateArrayArrayDimTag):
-            idx = eval_expr_assert_integer_constant(i, idx)
+            idx = eval_expr_assert_constant(i, idx)
             array_name += "_s%d" % idx
 
     # }}}
 
+    def __get_simplified(arr):
+        from loopy.isl_helpers import simplify_via_aff
+        return [simplify_via_aff(arr[i]) for i in range(len(arr))]
+
     def is_contiguous(arr):
+        if not len(arr):
+            return False
         sarr = sorted(arr)
         return len(arr) == vector_size and (sarr[-1] - sarr[0] + 1) == vector_size
 
     def is_monotonic(arr):
+        if not len(arr):
+            return False
+        signs = __get_simplified(
+            [arr[i + 1] - arr[i] for i in range(len(arr) - 1)])
         # check if array is monotonic increasing / decreasing
-        signs = [(arr[i + 1] - arr[i]) < 0 for i in range(len(arr) - 1)]
+        signs = [x < 0 for x in signs]
         return all(s == signs[0] for s in signs[1:])
 
     def run_over_vecrange(i, idx, base_subs):
@@ -1334,10 +1344,10 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
             try:
                 subsi = base_subs.copy()
                 subsi[vectorization_info.iname] = veci
-                evaled.append(eval_expr_assert_integer_constant(i, idx, **subsi))
+                evaled.append(eval_expr_assert_constant(i, idx, **subsi))
             except Unvectorizable:
                 pass
-        return evaled
+        return __get_simplified(evaled)
 
     vec_op_type = None
 
@@ -1405,7 +1415,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
 
                 if vector_index is None:
                     # if we haven't generated a load of shuffle...
-                    idx = eval_expr_assert_integer_constant(i, idx)
+                    idx = eval_expr_assert_constant(i, idx)
                     vector_index = idx
 
         else:

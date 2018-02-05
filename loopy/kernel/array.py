@@ -1242,7 +1242,6 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
         # on failure
         error_type = LoopyError if vectorization_info is None else Unvectorizable
         from pymbolic import evaluate
-        from pymbolic.primitives import Remainder
         try:
             result = evaluate(expr, kwargs)
         except UnknownVariableError as e:
@@ -1256,8 +1255,12 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
                 err_msg += "You likely want to unroll the iname(s) '%s'" % str(e)
             raise error_type(err_msg)
 
-        if not (is_integer(result) or (isinstance(result, Remainder) and
-                is_integer(result.denominator))):
+        if not is_integer(result):
+            # try to simplify further
+            from loopy.isl_helpers import simplify_via_aff
+            result = simplify_via_aff(result)
+
+        if not is_integer(result):
             raise error_type("subscript '%s[%s]' has non-constant "
                     "index for separate-array axis %d (0-based)" % (
                         ary.name, index, i))
@@ -1358,12 +1361,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
                     vectorization_info.iname in get_dependencies(idx):
                 # need to determine here whether the vector iname is aligned with
                 # the vector size -> shuffle, or unaligned -> load
-
-                # TODO: need some way to pass in other inames here, such that
-                # we only eliminate truly "known" quantities
-                subs = {x: 0 for x in get_dependencies(idx)
-                        if x != vectorization_info.iname}
-                evaled = run_over_vecrange(i, idx, subs)
+                evaled = run_over_vecrange(i, idx, compile_time_constants)
                 if is_monotonic(evaled):
                     vec_op_type = 'shuffle' if all(x == evaled[0] for x in evaled) \
                         else 'load'

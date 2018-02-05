@@ -138,6 +138,27 @@ class VectorizabilityChecker(RecursiveMapper):
                 if self.vec_iname in set(x.name for x in deps):
                     # check whether we can simplify out the vector iname
                     context = {x: x for x in deps if x.name != self.vec_iname}
+
+                    # determine allowed symbols as non-vector inames
+                    allowed_symbols = set(sym for sym in self.kernel.iname_to_tag
+                                          if sym != self.vec_iname)
+                    from loopy.kernel.instruction import Assignment
+                    from loopy.tools import is_integer
+                    from six import iteritems
+
+                    # and compile time integer temporaries
+                    compile_time_assign = set([
+                        str(insn.assignee) for insn in self.kernel.instructions if
+                        isinstance(insn, Assignment) and is_integer(
+                            insn.expression)])
+                    allowed_symbols.update(
+                        set(sym for sym, var in iteritems(
+                                self.kernel.temporary_variables)
+                            # temporary variables w/ no initializer, no shape
+                            if var.initializer is None and not var.shape
+                            # compile time integers
+                            and sym in compile_time_assign)
+                            )
                     from pymbolic import substitute
                     from loopy.tools import is_integer
                     for veci in range(self.vec_iname_length):
@@ -146,7 +167,7 @@ class VectorizabilityChecker(RecursiveMapper):
                         try:
                             idi = substitute(index[i], ncontext)
                             if not is_integer(idi) and not all(
-                                    x in self.kernel.iname_to_tag
+                                    x in allowed_symbols
                                     for x in get_dependencies(idi)):
                                 raise Unvectorizable(
                                     "vectorizing iname '%s' occurs in "

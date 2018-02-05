@@ -97,6 +97,41 @@ class VectorizabilityChecker(RecursiveMapper):
 
         return False
 
+    @staticmethod
+    def allowed_non_vecdim_dependencies(kernel, vec_iname):
+        """
+        Returns the dictionary of non-vector inames and compile time constants
+        mapped to their 'value' (themselves in case of iname, integer value in case
+        of constant)
+
+        .. attribute:: kernel
+            The kernel to check
+        .. attribute:: vec_iname
+            the vector iname
+        """
+
+        # determine allowed symbols as non-vector inames
+        from pymbolic.primitives import Variable
+        allowed_symbols = {sym: Variable(sym) for sym in kernel.iname_to_tag
+                           if sym != vec_iname}
+        from loopy.kernel.instruction import Assignment
+        from loopy.tools import is_integer
+        from six import iteritems
+
+        # and compile time integer temporaries
+        compile_time_assign = {str(insn.assignee): insn.expression
+            for insn in kernel.instructions if
+            isinstance(insn, Assignment) and is_integer(
+                insn.expression)}
+        allowed_symbols.update(
+            {sym: compile_time_assign[sym] for sym, var in iteritems(
+                    kernel.temporary_variables)
+                # temporary variables w/ no initializer, no shape
+                if var.initializer is None and not var.shape
+                # compile time integers
+                and sym in compile_time_assign})
+        return allowed_symbols
+
     def map_subscript(self, expr):
         name = expr.aggregate.name
 
@@ -138,27 +173,9 @@ class VectorizabilityChecker(RecursiveMapper):
                 if self.vec_iname in set(x.name for x in deps):
                     # check whether we can simplify out the vector iname
                     context = {x: x for x in deps if x.name != self.vec_iname}
+                    allowed_symbols = self.allowed_non_vecdim_dependencies(
+                        self.kernel, self.vec_iname)
 
-                    # determine allowed symbols as non-vector inames
-                    allowed_symbols = set(sym for sym in self.kernel.iname_to_tag
-                                          if sym != self.vec_iname)
-                    from loopy.kernel.instruction import Assignment
-                    from loopy.tools import is_integer
-                    from six import iteritems
-
-                    # and compile time integer temporaries
-                    compile_time_assign = set([
-                        str(insn.assignee) for insn in self.kernel.instructions if
-                        isinstance(insn, Assignment) and is_integer(
-                            insn.expression)])
-                    allowed_symbols.update(
-                        set(sym for sym, var in iteritems(
-                                self.kernel.temporary_variables)
-                            # temporary variables w/ no initializer, no shape
-                            if var.initializer is None and not var.shape
-                            # compile time integers
-                            and sym in compile_time_assign)
-                            )
                     from pymbolic import substitute
                     from loopy.tools import is_integer
                     for veci in range(self.vec_iname_length):

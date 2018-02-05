@@ -2814,6 +2814,9 @@ def test_explicit_simd_shuffles(ctx_factory):
                     'C'),
             answer)
 
+    # test w/ compile time temporary constant
+    create_and_test("<>c = 2\n" +
+                    "a[j, i] = a[j, i] + b[j, i + c]")
     create_and_test("a[j, i] = b[j, i + 2]")
     create_and_test("a[j, i] = b[j, i + 2] + a[j, i]")
     create_and_test("a[j, i] = a[j, i] + b[j, i + 2]")

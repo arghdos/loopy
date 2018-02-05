@@ -1216,7 +1216,8 @@ class AccessInfo(ImmutableRecord):
     """
 
 
-def get_access_info(target, ary, index, var_subst_map, vectorization_info):
+def get_access_info(target, ary, index, var_subst_map, vectorization_info,
+                    compile_time_constants):
     """
     :arg ary: an object of type :class:`ArrayBase`
     :arg index: a tuple of indices representing a subscript into ary
@@ -1224,6 +1225,8 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
         state
     :arg vectorization_info: an instance of :class:`loopy.codegen.VectorizationInfo`,
         or *None*.
+    :arg compile_time_constants: a set of compile time "constants" (inames and
+        integer temporaries w/ known values), used in detection of loads / shuffles
     """
 
     import loopy as lp
@@ -1239,6 +1242,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
         # on failure
         error_type = LoopyError if vectorization_info is None else Unvectorizable
         from pymbolic import evaluate
+        from pymbolic.primitives import Remainder
         try:
             result = evaluate(expr, kwargs)
         except UnknownVariableError as e:
@@ -1252,11 +1256,11 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
                 err_msg += "You likely want to unroll the iname(s) '%s'" % str(e)
             raise error_type(err_msg)
 
-        if not is_integer(result):
+        if not (is_integer(result) or (isinstance(result, Remainder) and
+                is_integer(result.denominator))):
             raise error_type("subscript '%s[%s]' has non-constant "
                     "index for separate-array axis %d (0-based)" % (
                         ary.name, index, i))
-
         return result
 
     def apply_offset(sub):
@@ -1391,11 +1395,11 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
             else:
                 if vectorization_info is not None:
                     # check dependencies
-                    deps = get_dependencies(idx)
+                    deps = get_dependencies(idx) - set(compile_time_constants.keys())
                     if len(deps) == 1 and vectorization_info.iname in deps:
                         # we depend only on the vectorized iname -- see if we can
                         # simplify to a load / shuffle
-                        evaled = run_over_vecrange(i, idx, {})
+                        evaled = run_over_vecrange(i, idx, compile_time_constants)
                         if is_contiguous(evaled):
                             # we can generate a load or shuffle depending on the
                             # alignment

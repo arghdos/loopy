@@ -188,9 +188,14 @@ class ExpressionToCExpressionMapper(IdentityMapper):
         index_tuple = tuple(
                 simplify_using_aff(self.kernel, idx) for idx in expr.index_tuple)
 
+        from loopy.expression import VectorizabilityChecker
         access_info = get_access_info(self.kernel.target, ary, index_tuple,
                 self.codegen_state.var_subst_map.copy(),
-                self.codegen_state.vectorization_info)
+                self.codegen_state.vectorization_info,
+                VectorizabilityChecker.allowed_non_vecdim_dependencies(
+                    self.codegen_state.kernel,
+                    self.codegen_state.vectorization_info.iname)
+                )
 
         from loopy.kernel.data import (
                 ImageArg, GlobalArg, TemporaryVariable, ConstantArg)

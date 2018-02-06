@@ -495,7 +495,10 @@ class OpenCLCASTBuilder(CASTBuilder):
         # to do so, we substitute the vector iname -> 0 to eliminate any term
         # involving it, and then substitute the first pre-computed index term
         access_expr = substitute(access_expr, {vec_iname: 0}) + index[0]
-        return 'vload%i(%i, &((%s*)%s))' % (len(index), size, ctype, access_expr)
+        # and stringify
+        access_expr = '&((%s*)%s)' % (ctype, access_expr)
+        from pymbolic.primitives import Call
+        return Call('vload%d' % len(index), (size, access_expr))
 
     def emit_barrier(self, synchronization_kind, mem_kind, comment):
         """

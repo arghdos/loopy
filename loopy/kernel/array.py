@@ -1375,16 +1375,18 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
                 if is_monotonic(evaled):
                     vec_op_type = 'shuffle' if all(x == evaled[0] for x in evaled) \
                         else 'load'
-
-                    # update vector operation type if necessary
-                    if vector_index is not None and isinstance(vector_index, tuple):
-                        assert vector_index[0] is None
-                        vector_index = (vec_op_type, vector_index[1])
                 else:
                     raise Unvectorizable('Vectorized iname %s present in '
                         'unvectorized axis %s (1-based) access "%s", and not '
                         'simplifiable to compile-time contigous access' % (
                             vectorization_info.iname, i + 1, idx))
+            elif vectorization_info is not None:
+                vec_op_type = 'shuffle'  # independent of vector iname
+
+            # update vector operation type if necessary
+            if vector_index is not None and isinstance(vector_index, tuple):
+                assert vector_index[0] is None
+                vector_index = (vec_op_type, vector_index[1])
 
             subscripts[dim_tag.target_axis] += (stride // vector_size)*idx
 
@@ -1431,6 +1433,9 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
             raise NotImplementedError("offsets for multiple image axes")
 
         subscripts[0] = apply_offset(subscripts[0])
+
+    if isinstance(vector_index, tuple):
+        assert vector_index[0] is not None, 'Unknown vectorization type'
 
     return AccessInfo(
             array_name=array_name,

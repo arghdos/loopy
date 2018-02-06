@@ -189,13 +189,15 @@ class ExpressionToCExpressionMapper(IdentityMapper):
                 simplify_using_aff(self.kernel, idx) for idx in expr.index_tuple)
 
         from loopy.expression import VectorizabilityChecker
+        ctc = {}
+        if self.codegen_state.vectorization_info is not None:
+            ctc = VectorizabilityChecker.allowed_non_vecdim_dependencies(
+                    self.codegen_state.kernel,
+                    self.codegen_state.vectorization_info.iname)
         access_info = get_access_info(self.kernel.target, ary, index_tuple,
                 self.codegen_state.var_subst_map.copy(),
                 self.codegen_state.vectorization_info,
-                VectorizabilityChecker.allowed_non_vecdim_dependencies(
-                    self.codegen_state.kernel,
-                    self.codegen_state.vectorization_info.iname)
-                )
+                ctc)
 
         from loopy.kernel.data import (
                 ImageArg, GlobalArg, TemporaryVariable, ConstantArg)
@@ -418,9 +420,16 @@ class ExpressionToCExpressionMapper(IdentityMapper):
             ary = self.find_array(arg)
 
             from loopy.kernel.array import get_access_info
+            ctc = {}
+            if self.codegen_state.vectorization_info is not None:
+                from loopy.expression import VectorizabilityChecker
+                ctc = VectorizabilityChecker.allowed_non_vecdim_dependencies(
+                        self.codegen_state.kernel,
+                        self.codegen_state.vectorization_info.iname)
             access_info = get_access_info(self.kernel.target, ary, arg.index,
                     self.codegen_state.var_subst_map.copy(),
-                    self.codegen_state.vectorization_info)
+                    self.codegen_state.vectorization_info,
+                    ctc)
 
             from loopy.kernel.data import ImageArg
             if isinstance(ary, ImageArg):

@@ -147,8 +147,9 @@ _CL_SIMPLE_MULTI_ARG_FUNCTIONS = {
         }
 
 
-VECTOR_LITERAL_FUNCS = dict(
-        ("make_%s%d" % (name, count), (name, dtype, count))
+def get_vector_func(func, template):
+    return dict(
+        (template % dict(func=func, name=name, count=count), (name, dtype, count))
         for name, dtype in [
             ('char', np.int8),
             ('uchar', np.uint8),
@@ -163,6 +164,11 @@ VECTOR_LITERAL_FUNCS = dict(
             ]
         for count in [2, 3, 4, 8, 16]
         )
+
+
+VECTOR_LITERAL_FUNCS = get_vector_func('make', '%(func)s_%(name)s%(count)d')
+VECTOR_STORE_FUNCS = get_vector_func('vstore', '%(func)s%(count)d')
+VECTOR_LOAD_FUNCS = get_vector_func('vload', '%(func)s%(count)d')
 
 
 def opencl_function_mangler(kernel, name, arg_dtypes):
@@ -218,6 +224,27 @@ def opencl_function_mangler(kernel, name, arg_dtypes):
                 result_dtypes=(kernel.target.vector_dtype(
                     NumpyType(dtype), count),),
                 arg_dtypes=(NumpyType(dtype),)*count)
+
+    if name in VECTOR_LOAD_FUNCS or name in VECTOR_STORE_FUNCS:
+        if name in VECTOR_LOAD_FUNCS:
+            load = True
+            _, dtype, count = VECTOR_LOAD_FUNCS[name]
+            result = (kernel.target.vector_dtype(NumpyType(dtype), count),)
+            args = (kernel.index_dtype, NumpyType(dtype))
+        else:
+            load = False
+            _, dtype, count = VECTOR_STORE_FUNCS[name]
+            result = tuple()
+            args = (kernel.target.vector_dtype(NumpyType(dtype), count),
+                    kernel.index_dtype, NumpyType(dtype))
+
+        if not ((count == 2 and load) or (count == 3 and not load)):
+            return None
+
+        return CallMangleInfo(
+                target_name=name,
+                result_dtypes=result,
+                arg_dtypes=args)
 
     return None
 

@@ -487,21 +487,18 @@ class OpenCLCASTBuilder(CASTBuilder):
     def add_vector_load(self, access_expr, vec_iname, array, index):
         from pymbolic import substitute
         # get ctype for casting
-        ctype = self.target.get_dtype_registry().dtype_to_ctype(array.dtype)
-        # get size of load in bytes
-        size = array.dtype.itemsize * len(index)
-        # and finally, convert the vector access expression to an index based expr
-        # such that we can take the index
-        # to do so, we substitute the vector iname -> 0 to eliminate any term
-        # involving it, and then substitute the first pre-computed index term
-        access_expr = str(substitute(access_expr, {vec_iname: 0}) + index[0])
-        # and finally remove the array name
-        access_expr = access_expr[access_expr.index(array.name) + len(array.name):]
-        # and stringify
-        access_expr = '&(((%s*)%s)%s)' % (ctype, array.name, access_expr)
+        ctype = str(array.get_arg_decl(
+            self, '', array.shape, array.dtype, False))
+        ctype = ctype[:ctype.rindex(array.name) - 1]
+        # and convert the vector access expression to a vector offset
+        # to do so, we substitute the vector iname -> 0 to eliminate it from the
+        # expression
+        offset = str(substitute(access_expr.index, {vec_iname: 0}))
+        # and cast / substitute in the calculated vector iname offset
+        cast_expr = '&((%s)%s)[%s]' % (ctype, array.name, index[0])
         from pymbolic.primitives import Call, Variable
         return Call(Variable('vload%d' % len(index)), (
-            Variable(str(size)), Variable(access_expr)))
+            Variable(offset), Variable(cast_expr)))
 
     def emit_barrier(self, synchronization_kind, mem_kind, comment):
         """

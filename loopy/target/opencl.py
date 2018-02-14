@@ -494,12 +494,14 @@ class OpenCLCASTBuilder(CASTBuilder):
         # such that we can take the index
         # to do so, we substitute the vector iname -> 0 to eliminate any term
         # involving it, and then substitute the first pre-computed index term
-        access_expr = substitute(access_expr, {vec_iname: 0}) + index[0]
+        access_expr = str(substitute(access_expr, {vec_iname: 0}) + index[0])
+        # and finally remove the array name
+        access_expr = access_expr[access_expr.index(array.name) + len(array.name):]
         # and stringify
-        access_expr = '&((%s*)%s)' % (ctype, access_expr)
-        from pymbolic.primitives import Call, Variable, Expression
+        access_expr = '&(((%s*)%s)%s' % (ctype, array.name, access_expr)
+        from pymbolic.primitives import Call, Variable
         return Call(Variable('vload%d' % len(index)), (
-            size, Expression(access_expr)))
+            Variable(str(size)), Variable(access_expr)))
 
     def emit_barrier(self, synchronization_kind, mem_kind, comment):
         """

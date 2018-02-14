@@ -2800,7 +2800,7 @@ def test_add_prefetch_works_in_lhs_index():
 def test_explicit_simd_shuffles(ctx_factory):
     ctx = ctx_factory()
 
-    def create_and_test(insn, answer=None, atomic=False):
+    def create_and_test(insn, answer=None, atomic=False, additional_check=None):
         knl = lp.make_kernel(['{[i]: 0 <= i < 12}', '{[j]: 0 <= j < 1}'],
                              insn,
                              [lp.GlobalArg('a', shape=(1, 12,), dtype=np.int32,
@@ -2822,10 +2822,14 @@ def test_explicit_simd_shuffles(ctx_factory):
                 b=np.arange(16, dtype=np.int32).reshape((1, 4, 4)))[1][0].flatten(
                     'C'),
             answer)
+        if additional_check is not None:
+            assert additional_check(knl)
 
     # test w/ compile time temporary constant
     create_and_test("<>c = 2\n" +
-                    "a[j, i] = a[j, i] + b[j, i + c]")
+                    "a[j, i] = b[j, i + c]",
+                    additional_check=lambda knl: 'vload' in lp.generate_code_v2(
+                        knl).device_code())
     create_and_test("a[j, i] = b[j, i + 2]")
     create_and_test("a[j, i] = b[j, i + 2] + a[j, i]")
     create_and_test("a[j, i] = a[j, i] + b[j, i + 2]")

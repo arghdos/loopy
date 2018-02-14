@@ -493,12 +493,18 @@ class OpenCLCASTBuilder(CASTBuilder):
         # and convert the vector access expression to a vector offset
         # to do so, we substitute the vector iname -> 0 to eliminate it from the
         # expression
-        offset = str(substitute(access_expr.index, {vec_iname: 0}))
+        offset = substitute(access_expr.index, {vec_iname: 0})
+        # try symplify
+        try:
+            from loopy.isl_helpers import simplify_via_aff
+            offset = simplify_via_aff(offset)
+        except:
+            pass
         # and cast / substitute in the calculated vector iname offset
         cast_expr = '&((%s)%s)[%s]' % (ctype, array.name, index[0])
         from pymbolic.primitives import Call, Variable
         return Call(Variable('vload%d' % len(index)), (
-            Variable(offset), Variable(cast_expr)))
+            Variable(str(offset)), Variable(cast_expr)))
 
     def emit_barrier(self, synchronization_kind, mem_kind, comment):
         """

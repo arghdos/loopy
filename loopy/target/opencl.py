@@ -498,7 +498,7 @@ class OpenCLCASTBuilder(CASTBuilder):
         # and finally remove the array name
         access_expr = access_expr[access_expr.index(array.name) + len(array.name):]
         # and stringify
-        access_expr = '&(((%s*)%s)%s' % (ctype, array.name, access_expr)
+        access_expr = '&(((%s*)%s)%s)' % (ctype, array.name, access_expr)
         from pymbolic.primitives import Call, Variable
         return Call(Variable('vload%d' % len(index)), (
             Variable(str(size)), Variable(access_expr)))

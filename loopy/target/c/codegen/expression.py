@@ -189,11 +189,12 @@ class ExpressionToCExpressionMapper(IdentityMapper):
                 simplify_using_aff(self.kernel, idx) for idx in expr.index_tuple)
 
         from loopy.expression import VectorizabilityChecker
-        ctc = {}
+        ctc_iname = ''
         if self.codegen_state.vectorization_info is not None:
-            ctc = VectorizabilityChecker.allowed_non_vecdim_dependencies(
-                    self.codegen_state.kernel,
-                    self.codegen_state.vectorization_info.iname)
+            ctc_iname = self.codegen_state.vectorization_info.iname
+        ctc = VectorizabilityChecker.allowed_non_vecdim_dependencies(
+                self.codegen_state.kernel,
+                ctc_iname)
         access_info = get_access_info(self.kernel.target, ary, index_tuple,
                 self.codegen_state.var_subst_map.copy(),
                 self.codegen_state.vectorization_info,
@@ -267,8 +268,18 @@ class ExpressionToCExpressionMapper(IdentityMapper):
                                 str(type(self.codegen_state.ast_builder)),
                                 method))
 
-                return self.codegen_state.ast_builder.add_vector_access(
-                    result, access_info.vector_index)
+                try:
+                    from loopy.tools import is_integer
+                    assert is_integer(access_info.vector_index)
+                    return self.codegen_state.ast_builder.add_vector_access(
+                        result, access_info.vector_index)
+                except AssertionError:
+                    from loopy.codegen import Unvectorizable
+                    raise Unvectorizable(
+                        "Cannot add vector access for non-integer vector addressing "
+                        "did you mean to tag iname '%s' as a vector index?" % (
+                            access_info.vector_index))
+
             else:
                 return result
 

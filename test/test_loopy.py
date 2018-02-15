@@ -769,7 +769,7 @@ def test_vector_types(ctx_factory, vec_len):
 
     ref_knl = knl
 
-    knl = lp.tag_data_axes(knl, "out", "c,vec")
+    knl = lp.tag_array_axes(knl, "out", "c,vec")
     knl = lp.tag_inames(knl, dict(j="unr"))
 
     knl = lp.split_iname(knl, "i", 128, outer_tag="g.0", inner_tag="l.0")

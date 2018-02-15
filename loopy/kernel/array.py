@@ -1314,7 +1314,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
 
     for i, (idx, dim_tag) in enumerate(zip(index, ary.dim_tags)):
         if isinstance(dim_tag, SeparateArrayArrayDimTag):
-            idx = eval_expr_assert_constant(i, idx)
+            idx = eval_expr_assert_constant(i, idx, **compile_time_constants)
             array_name += "_s%d" % idx
 
     # }}}
@@ -1417,7 +1417,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
 
                 if vector_index is None:
                     # if we haven't generated a load of shuffle...
-                    idx = eval_expr_assert_constant(i, idx)
+                    idx = eval_expr_assert_constant(i, idx, **compile_time_constants)
                     vector_index = idx
 
         else:

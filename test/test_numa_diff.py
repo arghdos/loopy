@@ -233,7 +233,7 @@ def test_gnuma_horiz_kernel(ctx_factory, ilp_multiple, Nq, opt_level):  # noqa
         print(lp.stringify_stats_mapping(op_map))
 
         print("MEM")
-        gmem_map = lp.get_mem_access_map(hsv).to_bytes()
+        gmem_map = lp.get_mem_access_map(hsv, subgroup_size=32).to_bytes()
         print(lp.stringify_stats_mapping(gmem_map))
 
     hsv = lp.set_options(hsv, cl_build_options=[
@@ -258,7 +258,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         exec(sys.argv[1])
     else:
-        from py.test.cmdline import main
+        from pytest import main
         main([__file__])
 
 # vim: foldmethod=marker

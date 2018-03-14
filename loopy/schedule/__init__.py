@@ -29,6 +29,8 @@ import sys
 import islpy as isl
 from loopy.diagnostic import warn_with_kernel, LoopyError  # noqa
 
+from pytools import MinRecursionLimit
+
 from pytools.persistent_dict import WriteOncePersistentDict
 from loopy.tools import LoopyKeyBuilder
 from loopy.version import DATA_MODEL_VERSION
@@ -657,7 +659,6 @@ def generate_loop_schedules_internal(
         sched_state, allow_boost=False, debug=None):
     # allow_insn is set to False initially and after entering each loop
     # to give loops containing high-priority instructions a chance.
-
     kernel = sched_state.kernel
     Fore = kernel.options._fore  # noqa
     Style = kernel.options._style  # noqa
@@ -776,10 +777,14 @@ def generate_loop_schedules_internal(
         # schedule generation order.
         return (insn.priority, len(active_groups & insn.groups), insn.id)
 
-    insn_ids_to_try = sorted(
-            # Non-prescheduled instructions go first.
-            sched_state.unscheduled_insn_ids - sched_state.prescheduled_insn_ids,
-            key=insn_sort_key, reverse=True)
+    # Use previous instruction sorting result if it is available
+    if sched_state.insn_ids_to_try is None:
+        insn_ids_to_try = sorted(
+                # Non-prescheduled instructions go first.
+                sched_state.unscheduled_insn_ids - sched_state.prescheduled_insn_ids,
+                key=insn_sort_key, reverse=True)
+    else:
+        insn_ids_to_try = sched_state.insn_ids_to_try
 
     insn_ids_to_try.extend(
         insn_id
@@ -898,9 +903,20 @@ def generate_loop_schedules_internal(
                     else:
                         new_active_group_counts[grp] = (
                                 sched_state.group_insn_counts[grp] - 1)
-
             else:
                 new_active_group_counts = sched_state.active_group_counts
+
+            # }}}
+
+            # {{{ update instruction_ids_to_try
+
+            new_insn_ids_to_try = list(insn_ids_to_try)
+            new_insn_ids_to_try.remove(insn.id)
+
+            # invalidate instruction_ids_to_try when active group changes
+            if set(new_active_group_counts.keys()) != set(
+                    sched_state.active_group_counts.keys()):
+                new_insn_ids_to_try = None
 
             # }}}
 
@@ -913,6 +929,7 @@ def generate_loop_schedules_internal(
             new_sched_state = sched_state.copy(
                     scheduled_insn_ids=sched_state.scheduled_insn_ids | iid_set,
                     unscheduled_insn_ids=sched_state.unscheduled_insn_ids - iid_set,
+                    insn_ids_to_try=new_insn_ids_to_try,
                     schedule=(
                         sched_state.schedule + (RunInstruction(insn_id=insn.id),)),
                     preschedule=(
@@ -928,7 +945,6 @@ def generate_loop_schedules_internal(
             # Don't be eager about entering/leaving loops--if progress has been
             # made, revert to top of scheduler and see if more progress can be
             # made.
-
             for sub_sched in generate_loop_schedules_internal(
                     new_sched_state,
                     allow_boost=rec_allow_boost, debug=debug):
@@ -1419,6 +1435,9 @@ class DependencyTracker(object):
         self.reverse = reverse
         self.var_kind = var_kind
 
+        from loopy.symbolic import AccessRangeOverlapChecker
+        self.overlap_checker = AccessRangeOverlapChecker(kernel)
+
         if var_kind == "local":
             self.relevant_vars = kernel.local_var_names()
         elif var_kind == "global":
@@ -1539,10 +1558,9 @@ class DependencyTracker(object):
                 if src_race_vars == tgt_race_vars and len(src_race_vars) == 1:
                     race_var, = src_race_vars
 
-                    from loopy.symbolic import do_access_ranges_overlap_conservative
-                    if not do_access_ranges_overlap_conservative(
-                            self.kernel, target.id, tgt_dir,
-                            source_id, src_dir, race_var):
+                    if not (
+                        self.overlap_checker.do_access_ranges_overlap_conservative(
+                                target.id, tgt_dir, source_id, src_dir, race_var)):
                         continue
 
                 yield DependencyRecord(
@@ -1810,12 +1828,27 @@ def insert_barriers(kernel, schedule, synchronization_kind, verify_only, level=0
 # }}}
 
 
+class MinRecursionLimitForScheduling(MinRecursionLimit):
+    def __init__(self, kernel):
+        MinRecursionLimit.__init__(self,
+                len(kernel.instructions) * 2 + len(kernel.all_inames()) * 4)
+
+
 # {{{ main scheduling entrypoint
 
 def generate_loop_schedules(kernel, debug_args={}):
-    from pytools import MinRecursionLimit
-    with MinRecursionLimit(max(len(kernel.instructions) * 2,
-                               len(kernel.all_inames()) * 4)):
+    """
+    .. warning::
+
+        This function needs to be called inside (another layer) of a
+        :class:`MinRecursionLimitForScheduling` context manager, and the
+        context manager needs to end *after* the last reference to the
+        generators has gone out of scope. Otherwise, the high-recursion-limit
+        generator chain may not be successfully garbage-collected and cause an
+        internal error in the Python runtime.
+    """
+
+    with MinRecursionLimitForScheduling(kernel):
         for sched in generate_loop_schedules_inner(kernel, debug_args=debug_args):
             yield sched
 
@@ -1887,6 +1920,7 @@ def generate_loop_schedules_inner(kernel, debug_args={}):
             may_schedule_global_barriers=True,
 
             preschedule=preschedule,
+            insn_ids_to_try=None,
 
             # ilp and vec are not parallel for the purposes of the scheduler
             parallel_inames=parallel_inames - ilp_inames - vec_inames,
@@ -2003,6 +2037,19 @@ schedule_cache = WriteOncePersistentDict(
         key_builder=LoopyKeyBuilder())
 
 
+def _get_one_scheduled_kernel_inner(kernel):
+    # This helper function exists to ensure that the generator chain is fully
+    # out of scope after the function returns. This allows it to be
+    # garbage-collected in the exit handler of the
+    # MinRecursionLimitForScheduling context manager in the surrounding
+    # function, because it possilby cannot be safely collected with a lower
+    # recursion limit without crashing the Python runtime.
+    #
+    # See https://gitlab.tiker.net/inducer/sumpy/issues/31 for context.
+
+    return next(iter(generate_loop_schedules(kernel)))
+
+
 def get_one_scheduled_kernel(kernel):
     from loopy import CACHING_ENABLED
 
@@ -2024,7 +2071,8 @@ def get_one_scheduled_kernel(kernel):
 
         logger.info("%s: schedule start" % kernel.name)
 
-        result = next(iter(generate_loop_schedules(kernel)))
+        with MinRecursionLimitForScheduling(kernel):
+            result = _get_one_scheduled_kernel_inner(kernel)
 
         logger.info("%s: scheduling done after %.2f s" % (
             kernel.name, time()-start_time))

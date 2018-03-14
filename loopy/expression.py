@@ -112,8 +112,8 @@ class VectorizabilityChecker(RecursiveMapper):
 
         # determine allowed symbols as non-vector inames
         from pymbolic.primitives import Variable
-        allowed_symbols = {sym: Variable(sym) for sym in kernel.iname_to_tag
-                           if sym != vec_iname}
+        allowed_symbols = dict((sym, Variable(sym)) for sym in kernel.iname_to_tag
+                               if sym != vec_iname)
         from loopy.kernel.instruction import Assignment
         from loopy.tools import is_integer
         from six import iteritems

@@ -1216,17 +1216,15 @@ class AccessInfo(ImmutableRecord):
     """
 
 
-def get_access_info(target, ary, index, var_subst_map, vectorization_info,
-                    compile_time_constants):
+def get_access_info(target, ary, index, var_subst_map, vectorization_info):
     """
     :arg ary: an object of type :class:`ArrayBase`
     :arg index: a tuple of indices representing a subscript into ary
     :arg var_subst_map: a context of variable substitutions from the calling codegen
-        state
+        state and potentially other compile-time "constants" (inames and
+        integer temporaries w/ known values), used in detection of loads / shuffles
     :arg vectorization_info: an instance of :class:`loopy.codegen.VectorizationInfo`,
         or *None*.
-    :arg compile_time_constants: a set of compile time "constants" (inames and
-        integer temporaries w/ known values), used in detection of loads / shuffles
     """
 
     import loopy as lp
@@ -1260,7 +1258,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
             from loopy.isl_helpers import simplify_via_aff
             result = simplify_via_aff(result)
 
-        if any([x not in compile_time_constants for x in get_dependencies(result)]):
+        if any([x not in var_subst_map for x in get_dependencies(result)]):
             raise error_type("subscript '%s[%s]' has non-constant "
                     "index for separate-array axis %d (0-based)" % (
                         ary.name, index, i))
@@ -1314,7 +1312,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
 
     for i, (idx, dim_tag) in enumerate(zip(index, ary.dim_tags)):
         if isinstance(dim_tag, SeparateArrayArrayDimTag):
-            idx = eval_expr_assert_constant(i, idx, **compile_time_constants)
+            idx = eval_expr_assert_constant(i, idx, **var_subst_map)
             array_name += "_s%d" % idx
 
     # }}}
@@ -1371,7 +1369,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
                     vectorization_info.iname in get_dependencies(idx):
                 # need to determine here whether the vector iname is aligned with
                 # the vector size -> shuffle, or unaligned -> load
-                evaled = run_over_vecrange(i, idx, compile_time_constants)
+                evaled = run_over_vecrange(i, idx, var_subst_map)
                 if is_monotonic(evaled):
                     vec_op_type = 'shuffle' if all(x == evaled[0] for x in evaled) \
                         else 'load'
@@ -1405,11 +1403,11 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
             else:
                 if vectorization_info is not None:
                     # check dependencies
-                    deps = get_dependencies(idx) - set(compile_time_constants.keys())
+                    deps = get_dependencies(idx) - set(var_subst_map.keys())
                     if len(deps) == 1 and vectorization_info.iname in deps:
                         # we depend only on the vectorized iname -- see if we can
                         # simplify to a load / shuffle
-                        evaled = run_over_vecrange(i, idx, compile_time_constants)
+                        evaled = run_over_vecrange(i, idx, var_subst_map)
                         if is_contiguous(evaled):
                             # we can generate a load or shuffle depending on the
                             # alignment
@@ -1417,7 +1415,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info,
 
                 if vector_index is None:
                     # if we haven't generated a load of shuffle...
-                    idx = eval_expr_assert_constant(i, idx, **compile_time_constants)
+                    idx = eval_expr_assert_constant(i, idx, **var_subst_map)
                     vector_index = idx
 
         else:

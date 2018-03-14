@@ -177,6 +177,7 @@ class VectorizabilityChecker(RecursiveMapper):
                         self.kernel, self.vec_iname)
 
                     from pymbolic import substitute
+                    from pymbolic.mapper.evaluator import UnknownVariableError
                     from loopy.tools import is_integer
                     for veci in range(self.vec_iname_length):
                         ncontext = context.copy()
@@ -192,7 +193,7 @@ class VectorizabilityChecker(RecursiveMapper):
                                     "expression '%s', and could not be simplified"
                                     "to compile-time constants."
                                     % (self.vec_iname, i+1, expr))
-                        except:
+                        except UnknownVariableError:
                             break
 
         return bool(possible)

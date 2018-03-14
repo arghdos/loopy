@@ -494,11 +494,12 @@ class OpenCLCASTBuilder(CASTBuilder):
         # to do so, we substitute the vector iname -> 0 to eliminate it from the
         # expression
         offset = substitute(access_expr.index, {vec_iname: 0})
-        # try symplify
+        # try simplify
+        from pymbolic.mapper.evaluator import UnknownVariableError
         try:
             from loopy.isl_helpers import simplify_via_aff
             offset = simplify_via_aff(offset)
-        except:
+        except UnknownVariableError:
             pass
         # and cast / substitute in the calculated vector iname offset
         cast_expr = '&((%s)%s)[%s]' % (ctype, array.name, index[0])

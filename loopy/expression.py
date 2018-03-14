@@ -172,7 +172,7 @@ class VectorizabilityChecker(RecursiveMapper):
                 deps = dep_mapper(index[i])
                 if self.vec_iname in set(x.name for x in deps):
                     # check whether we can simplify out the vector iname
-                    context = {x: x for x in deps if x.name != self.vec_iname}
+                    context = dict((x, x) for x in deps if x.name != self.vec_iname)
                     allowed_symbols = self.allowed_non_vecdim_dependencies(
                         self.kernel, self.vec_iname)
 

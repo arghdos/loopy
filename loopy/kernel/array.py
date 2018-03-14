@@ -1232,7 +1232,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
     from loopy.codegen import Unvectorizable
     from loopy.symbolic import get_dependencies
 
-    def eval_expr_assert_constant(i, expr, **kwargs):
+    def eval_expr_assert_constant(i, expr, kwargs):
         from pymbolic.mapper.evaluator import UnknownVariableError
         # determine error type -- if vectorization_info is None, we're in the
         # unvec fallback (and should raise a LoopyError)
@@ -1312,7 +1312,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
 
     for i, (idx, dim_tag) in enumerate(zip(index, ary.dim_tags)):
         if isinstance(dim_tag, SeparateArrayArrayDimTag):
-            idx = eval_expr_assert_constant(i, idx, **var_subst_map)
+            idx = eval_expr_assert_constant(i, idx, var_subst_map)
             array_name += "_s%d" % idx
 
     # }}}
@@ -1342,7 +1342,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
             try:
                 subsi = base_subs.copy()
                 subsi[vectorization_info.iname] = veci
-                evaled.append(eval_expr_assert_constant(i, idx, **subsi))
+                evaled.append(eval_expr_assert_constant(i, idx, subsi))
             except Unvectorizable:
                 pass
         return __get_simplified(evaled)
@@ -1415,7 +1415,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
 
                 if vector_index is None:
                     # if we haven't generated a load of shuffle...
-                    idx = eval_expr_assert_constant(i, idx, **var_subst_map)
+                    idx = eval_expr_assert_constant(i, idx, var_subst_map)
                     vector_index = idx
 
         else:

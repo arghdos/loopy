@@ -29,13 +29,18 @@ if os.environ.get("AKPYTHON_EXEC_IMPORT_UNAVAILABLE") is not None:
     _git_rev = None
 
 else:
-    import loopy._git_rev as _git_rev_mod
-    _git_rev = _git_rev_mod.GIT_REVISION
+    try:
+        import loopy._git_rev as _git_rev_mod
+        _git_rev = _git_rev_mod.GIT_REVISION
+    except ImportError:
+        _git_rev = None
 
     # If we're running from a dev tree, the last install (and hence the most
     # recent update of the above git rev) could have taken place very long ago.
     from pytools import find_module_git_revision
     _runtime_git_rev = find_module_git_revision(__file__, n_levels_up=1)
+    if _git_rev is None and _runtime_git_rev is None:
+        raise Exception("Cannot determine git revision from install or dev-tree.")
     if _runtime_git_rev is not None:
         _git_rev = _runtime_git_rev
 

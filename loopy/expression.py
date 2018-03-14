@@ -119,17 +119,17 @@ class VectorizabilityChecker(RecursiveMapper):
         from six import iteritems
 
         # and compile time integer temporaries
-        compile_time_assign = {str(insn.assignee): insn.expression
-            for insn in kernel.instructions if
-            isinstance(insn, Assignment) and is_integer(
-                insn.expression)}
+        compile_time_assign = dict((str(insn.assignee), insn.expression)
+                                   for insn in kernel.instructions if
+                                   isinstance(insn, Assignment) and is_integer(
+                                   insn.expression))
         allowed_symbols.update(
-            {sym: compile_time_assign[sym] for sym, var in iteritems(
+            dict((sym, compile_time_assign[sym]) for sym, var in iteritems(
                     kernel.temporary_variables)
                 # temporary variables w/ no initializer, no shape
                 if var.initializer is None and not var.shape
                 # compile time integers
-                and sym in compile_time_assign})
+                and sym in compile_time_assign))
         return allowed_symbols
 
     def map_subscript(self, expr):

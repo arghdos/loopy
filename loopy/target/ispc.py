@@ -110,9 +110,16 @@ class ExprToISPCExprMapper(ExpressionToCExpressionMapper):
                 lsize, = lsize
                 from loopy.kernel.array import get_access_info
 
+                var_subst_map = self.codegen_state.var_subst_map.copy()
+                if self.codegen_state.vectorization_info is not None:
+                    from loopy.expression import VectorizabilityChecker
+                    ctc = VectorizabilityChecker.allowed_non_vecdim_dependencies(
+                            self.codegen_state.kernel,
+                            self.codegen_state.vectorization_info.iname)
+                    var_subst_map.update(ctc)
+
                 access_info = get_access_info(self.kernel.target, ary, expr.index,
-                    self.codegen_state.var_subst_map.copy(),
-                    self.codegen_state.vectorization_info)
+                    var_subst_map, self.codegen_state.vectorization_info)
 
                 subscript, = access_info.subscripts
                 result = var(access_info.array_name)[
@@ -393,9 +400,16 @@ class ISPCASTBuilder(CASTBuilder):
             index_tuple = tuple(
                     simplify_using_aff(kernel, idx) for idx in lhs.index_tuple)
 
+            var_subst_map = codegen_state.var_subst_map.copy()
+            if codegen_state.vectorization_info is not None:
+                from loopy.expression import VectorizabilityChecker
+                ctc = VectorizabilityChecker.allowed_non_vecdim_dependencies(
+                        codegen_state.kernel,
+                        codegen_state.vectorization_info.iname)
+                var_subst_map.update(ctc)
+
             access_info = get_access_info(kernel.target, ary, index_tuple,
-                    self.codegen_state.var_subst_map.copy(),
-                    codegen_state.vectorization_info)
+                    var_subst_map, codegen_state.vectorization_info)
 
             from loopy.kernel.data import GlobalArg, TemporaryVariable
 

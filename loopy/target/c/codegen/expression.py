@@ -432,16 +432,16 @@ class ExpressionToCExpressionMapper(IdentityMapper):
             ary = self.find_array(arg)
 
             from loopy.kernel.array import get_access_info
-            ctc = {}
+            var_subst_map = self.codegen_state.var_subst_map.copy()
             if self.codegen_state.vectorization_info is not None:
                 from loopy.expression import VectorizabilityChecker
                 ctc = VectorizabilityChecker.allowed_non_vecdim_dependencies(
                         self.codegen_state.kernel,
                         self.codegen_state.vectorization_info.iname)
+                var_subst_map.update(ctc)
             access_info = get_access_info(self.kernel.target, ary, arg.index,
                     self.codegen_state.var_subst_map.copy(),
-                    self.codegen_state.vectorization_info,
-                    ctc)
+                    self.codegen_state.vectorization_info)
 
             from loopy.kernel.data import ImageArg
             if isinstance(ary, ImageArg):

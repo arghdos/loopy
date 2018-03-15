@@ -1243,15 +1243,21 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
         try:
             result = evaluate(expr, kwargs)
         except UnknownVariableError as e:
-            err_msg = ("When trying to index the array '%s' along axis "
-                       "%d (tagged '%s'), the index was not a compile-time "
-                       "constant (but it has to be in order for code to be "
-                       "generated)."
-                       % (ary.name, i, ary.dim_tags[i]))
             if vectorization_info is not None:
-                # add bit about unrolling
-                err_msg += "You likely want to unroll the iname(s) '%s'" % str(e)
-            raise error_type(err_msg)
+                # failed vectorization
+                raise Unvectorizable(
+                    "When trying to vectorize the array '%s' along axis "
+                    "%d (tagged '%s'), the index was not a compile-time "
+                    "constant (but it has to be in order for code to be "
+                    "generated). You likely want to unroll the iname(s) '%s'"
+                    % (ary.name, i, ary.dim_tags[i], str(e)))
+            else:
+                raise LoopyError(
+                    "When trying to unroll the array '%s' along axis "
+                    "%d (tagged '%s'), the index was not an unrollable-iname "
+                    "or constant (but it has to be in order for code to be "
+                    "generated). You likely want to unroll/change array index(s)"
+                    " '%s'" % (ary.name, i, ary.dim_tags[i], str(e)))
 
         if not is_integer(result):
             # try to simplify further

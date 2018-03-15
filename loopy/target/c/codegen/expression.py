@@ -190,7 +190,7 @@ class ExpressionToCExpressionMapper(IdentityMapper):
 
         from loopy.expression import VectorizabilityChecker
         var_subst_map = self.codegen_state.var_subst_map.copy()
-        if self.codegen_state.vectorization_info is not None:
+        if self.codegen_state.vectorization_info:
             ctc_iname = self.codegen_state.vectorization_info.iname
             ctc = VectorizabilityChecker.allowed_non_vecdim_dependencies(
                     self.codegen_state.kernel,
@@ -433,7 +433,7 @@ class ExpressionToCExpressionMapper(IdentityMapper):
 
             from loopy.kernel.array import get_access_info
             var_subst_map = self.codegen_state.var_subst_map.copy()
-            if self.codegen_state.vectorization_info is not None:
+            if self.codegen_state.vectorization_info:
                 from loopy.expression import VectorizabilityChecker
                 ctc = VectorizabilityChecker.allowed_non_vecdim_dependencies(
                         self.codegen_state.kernel,

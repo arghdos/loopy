@@ -587,7 +587,13 @@ class OpenCLCASTBuilder(CASTBuilder):
         # FIXME: Could detect operations, generate atomic_{add,...} when
         # appropriate.
 
-        if codegen_state.vectorization_fallback or codegen_state.vectorization_info:
+        if codegen_state.vectorization_info is not None:
+            # note - this check whether we've previously tried to vectorize and
+            # failed (in which case vectorization_info will be False) or whether
+            # vectorization_info is a valid :class:`VectorizationInfo`
+            #
+            # Both cases should fail (as we can't take the index of an unrolled
+            # atomic)
             raise LoopyError('Atomic operators not yet implemented for '
                              'explicit-SIMD vectorization')
 

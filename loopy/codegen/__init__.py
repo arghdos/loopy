@@ -178,10 +178,6 @@ class CodeGenerationState(object):
 
         None or an instance of :class:`VectorizationInfo`
 
-    .. attribute:: vectorization_fallback
-        True IFF :func:`try_vectorized` failed, and we're in the :func:`unvectorize`
-        fallback
-
     .. attribute:: is_generating_device_code
 
     .. attribute:: gen_program_name
@@ -200,8 +196,7 @@ class CodeGenerationState(object):
             vectorization_info=None, var_name_generator=None,
             is_generating_device_code=None,
             gen_program_name=None,
-            schedule_index_end=None,
-            vectorization_fallback=False):
+            schedule_index_end=None):
         self.kernel = kernel
         self.implemented_data_info = implemented_data_info
         self.implemented_domain = implemented_domain
@@ -212,7 +207,6 @@ class CodeGenerationState(object):
         self.var_subst_map = var_subst_map.copy()
         self.allow_complex = allow_complex
         self.vectorization_info = vectorization_info
-        self.vectorization_fallback = vectorization_fallback
         self.var_name_generator = var_name_generator
         self.is_generating_device_code = is_generating_device_code
         self.gen_program_name = gen_program_name
@@ -233,12 +227,7 @@ class CodeGenerationState(object):
         if implemented_data_info is None:
             implemented_data_info = self.implemented_data_info
 
-        vectorization_fallback = self.vectorization_fallback
-        if vectorization_info is False:
-            vectorization_fallback = True
-            vectorization_info = None
-
-        elif vectorization_info is None:
+        if vectorization_info is None:
             vectorization_info = self.vectorization_info
 
         if is_generating_device_code is None:
@@ -262,7 +251,6 @@ class CodeGenerationState(object):
                 var_subst_map=var_subst_map or self.var_subst_map,
                 allow_complex=self.allow_complex,
                 vectorization_info=vectorization_info,
-                vectorization_fallback=vectorization_fallback,
                 var_name_generator=self.var_name_generator,
                 is_generating_device_code=is_generating_device_code,
                 gen_program_name=gen_program_name,

@@ -111,7 +111,7 @@ class ExprToISPCExprMapper(ExpressionToCExpressionMapper):
                 from loopy.kernel.array import get_access_info
 
                 var_subst_map = self.codegen_state.var_subst_map.copy()
-                if self.codegen_state.vectorization_info is not None:
+                if self.codegen_state.vectorization_info:
                     from loopy.expression import VectorizabilityChecker
                     ctc = VectorizabilityChecker.allowed_non_vecdim_dependencies(
                             self.codegen_state.kernel,
@@ -401,7 +401,7 @@ class ISPCASTBuilder(CASTBuilder):
                     simplify_using_aff(kernel, idx) for idx in lhs.index_tuple)
 
             var_subst_map = codegen_state.var_subst_map.copy()
-            if codegen_state.vectorization_info is not None:
+            if codegen_state.vectorization_info:
                 from loopy.expression import VectorizabilityChecker
                 ctc = VectorizabilityChecker.allowed_non_vecdim_dependencies(
                         codegen_state.kernel,

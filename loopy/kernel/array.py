@@ -1236,22 +1236,28 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
         from pymbolic.mapper.evaluator import UnknownVariableError
         # determine error type -- if vectorization_info is None, we're in the
         # unvec fallback (and should raise a LoopyError)
-        # if vectorization_info is not None, we should raise an Unvectorizable
+        # if vectorization_info is 'True', we should raise an Unvectorizable
         # on failure
         error_type = LoopyError if vectorization_info is None else Unvectorizable
         from pymbolic import evaluate
         try:
             result = evaluate(expr, kwargs)
         except UnknownVariableError as e:
-            err_msg = ("When trying to index the array '%s' along axis "
-                       "%d (tagged '%s'), the index was not a compile-time "
-                       "constant (but it has to be in order for code to be "
-                       "generated)."
-                       % (ary.name, i, ary.dim_tags[i]))
-            if vectorization_info is not None:
-                # add bit about unrolling
-                err_msg += "You likely want to unroll the iname(s) '%s'" % str(e)
-            raise error_type(err_msg)
+            if vectorization_info:
+                # failed vectorization
+                raise Unvectorizable(
+                    "When trying to vectorize the array '%s' along axis "
+                    "%d (tagged '%s'), the index was not a compile-time "
+                    "constant (but it has to be in order for code to be "
+                    "generated). You likely want to unroll the iname(s) '%s'"
+                    % (ary.name, i, ary.dim_tags[i], str(e)))
+            else:
+                raise LoopyError(
+                    "When trying to unroll the array '%s' along axis "
+                    "%d (tagged '%s'), the index was not an unrollable-iname "
+                    "or constant (but it has to be in order for code to be "
+                    "generated). You likely want to unroll/change array index(s)"
+                    " '%s'" % (ary.name, i, ary.dim_tags[i], str(e)))
 
         if not is_integer(result):
             # try to simplify further
@@ -1365,7 +1371,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
             elif stride is lp.auto:
                 stride = var(array_name + "_stride%d" % i)
 
-            if vectorization_info is not None and \
+            if vectorization_info and \
                     vectorization_info.iname in get_dependencies(idx):
                 # need to determine here whether the vector iname is aligned with
                 # the vector size -> shuffle, or unaligned -> load
@@ -1378,7 +1384,7 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
                         'unvectorized axis %s (1-based) access "%s", and not '
                         'simplifiable to compile-time contigous access' % (
                             vectorization_info.iname, i + 1, idx))
-            elif vectorization_info is not None:
+            elif vectorization_info:
                 vec_op_type = 'shuffle'  # independent of vector iname
 
             # update vector operation type if necessary
@@ -1393,15 +1399,14 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
 
         elif isinstance(dim_tag, VectorArrayDimTag):
             from pymbolic.primitives import Variable
-            if (vectorization_info is not None
-                    and isinstance(index[i], Variable)
+            if (vectorization_info and isinstance(index[i], Variable)
                     and index[i].name == vectorization_info.iname):
                 # We'll do absolutely nothing here, which will result
                 # in the vector being returned.
                 pass
 
             else:
-                if vectorization_info is not None:
+                if vectorization_info:
                     # check dependencies
                     deps = get_dependencies(idx) - set(var_subst_map.keys())
                     if len(deps) == 1 and vectorization_info.iname in deps:

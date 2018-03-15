@@ -113,9 +113,6 @@ def generate_assignment_instruction_code(codegen_state, insn):
         vcheck = VectorizabilityChecker(
                 kernel, vinfo.iname, vinfo.length)
         lhs_is_vector = vcheck(insn.assignee)
-        if isinstance(lhs_is_vector, tuple) and lhs_is_vector[0] == 'load':
-            # convert vector 'load' assignes to stores
-            lhs_is_vector = 'store'
         rhs_is_vector = vcheck(insn.expression)
 
         if not lhs_is_vector and rhs_is_vector:

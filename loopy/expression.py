@@ -154,52 +154,45 @@ class VectorizabilityChecker(RecursiveMapper):
 
         index = expr.index_tuple
 
-        from loopy.symbolic import get_dependencies
+        from loopy.symbolic import get_dependencies, DependencyMapper
         from loopy.kernel.array import VectorArrayDimTag
-        from pymbolic.primitives import Variable
 
         possible = None
         for i in range(len(var.shape)):
-            # if index is exactly vector iname
-            if isinstance(var.dim_tags[i], VectorArrayDimTag) and (
-                    (isinstance(index[i], Variable)
-                     and index[i].name == self.vec_iname)):
+            dep_mapper = DependencyMapper(composite_leaves=False)
+            deps = dep_mapper(index[i])
+            # if we're on the vector index
+            if isinstance(var.dim_tags[i], VectorArrayDimTag):
                 if var.shape[i] != self.vec_iname_length:
                     raise Unvectorizable("vector length was mismatched")
-
                 if possible is None:
-                    possible = True
-
+                    possible = self.vec_iname in [str(x) for x in deps]
             # or, if not vector index, and vector iname is present
-            elif not isinstance(var.dim_tags[i], VectorArrayDimTag):
-                from loopy.symbolic import DependencyMapper
-                dep_mapper = DependencyMapper(composite_leaves=False)
-                deps = dep_mapper(index[i])
-                if self.vec_iname in set(x.name for x in deps):
-                    # check whether we can simplify out the vector iname
-                    context = dict((x, x) for x in deps if x.name != self.vec_iname)
-                    allowed_symbols = self.compile_time_constants(
-                        self.kernel, self.vec_iname)
+            elif self.vec_iname in set(x.name for x in deps):
+                # check whether we can simplify out the vector iname
+                context = dict((x, x) for x in deps if x.name != self.vec_iname)
+                allowed_symbols = self.compile_time_constants(
+                    self.kernel, self.vec_iname)
 
-                    from pymbolic import substitute
-                    from pymbolic.mapper.evaluator import UnknownVariableError
-                    from loopy.tools import is_integer
-                    for veci in range(self.vec_iname_length):
-                        ncontext = context.copy()
-                        ncontext[self.vec_iname] = veci
-                        try:
-                            idi = substitute(index[i], ncontext)
-                            if not is_integer(idi) and not all(
-                                    x in allowed_symbols
-                                    for x in get_dependencies(idi)):
-                                raise Unvectorizable(
-                                    "vectorizing iname '%s' occurs in "
-                                    "unvectorized subscript axis %d (1-based) of "
-                                    "expression '%s', and could not be simplified"
-                                    "to compile-time constants."
-                                    % (self.vec_iname, i+1, expr))
-                        except UnknownVariableError:
-                            break
+                from pymbolic import substitute
+                from pymbolic.mapper.evaluator import UnknownVariableError
+                from loopy.tools import is_integer
+                for veci in range(self.vec_iname_length):
+                    ncontext = context.copy()
+                    ncontext[self.vec_iname] = veci
+                    try:
+                        idi = substitute(index[i], ncontext)
+                        if not is_integer(idi) and not all(
+                                x in allowed_symbols
+                                for x in get_dependencies(idi)):
+                            raise Unvectorizable(
+                                "vectorizing iname '%s' occurs in "
+                                "unvectorized subscript axis %d (1-based) of "
+                                "expression '%s', and could not be simplified"
+                                "to compile-time constants."
+                                % (self.vec_iname, i+1, expr))
+                    except UnknownVariableError:
+                        break
 
         return bool(possible)
 

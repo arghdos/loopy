@@ -113,7 +113,7 @@ class ExprToISPCExprMapper(ExpressionToCExpressionMapper):
                 var_subst_map = self.codegen_state.var_subst_map.copy()
                 if self.codegen_state.vectorization_info:
                     from loopy.expression import VectorizabilityChecker
-                    ctc = VectorizabilityChecker.allowed_non_vecdim_dependencies(
+                    ctc = VectorizabilityChecker.compile_time_constants(
                             self.codegen_state.kernel,
                             self.codegen_state.vectorization_info.iname)
                     var_subst_map.update(ctc)
@@ -403,7 +403,7 @@ class ISPCASTBuilder(CASTBuilder):
             var_subst_map = codegen_state.var_subst_map.copy()
             if codegen_state.vectorization_info:
                 from loopy.expression import VectorizabilityChecker
-                ctc = VectorizabilityChecker.allowed_non_vecdim_dependencies(
+                ctc = VectorizabilityChecker.compile_time_constants(
                         codegen_state.kernel,
                         codegen_state.vectorization_info.iname)
                 var_subst_map.update(ctc)

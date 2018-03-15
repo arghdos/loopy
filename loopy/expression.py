@@ -98,16 +98,21 @@ class VectorizabilityChecker(RecursiveMapper):
         return False
 
     @staticmethod
-    def allowed_non_vecdim_dependencies(kernel, vec_iname):
+    def compile_time_constants(kernel, vec_iname):
         """
-        Returns the dictionary of non-vector inames and compile time constants
-        mapped to their 'value' (themselves in case of iname, integer value in case
-        of constant)
+        Returns a dictionary of (non-vector) inames and temporary variables whose
+        value is known at "compile" time. These are used (in combination with a
+        codegen state's variable substitution map) to simplifying access expressions
+        in :func:`get_access_info`.
 
-        .. attribute:: kernel
+        Note: inames are mapped to the :class:`Variable` version of themselves,
+              while temporary variables are mapped to their integer value
+
+        .. parameter:: kernel
             The kernel to check
-        .. attribute:: vec_iname
+        .. parameter:: vec_iname
             the vector iname
+
         """
 
         # determine allowed symbols as non-vector inames
@@ -173,7 +178,7 @@ class VectorizabilityChecker(RecursiveMapper):
                 if self.vec_iname in set(x.name for x in deps):
                     # check whether we can simplify out the vector iname
                     context = dict((x, x) for x in deps if x.name != self.vec_iname)
-                    allowed_symbols = self.allowed_non_vecdim_dependencies(
+                    allowed_symbols = self.compile_time_constants(
                         self.kernel, self.vec_iname)
 
                     from pymbolic import substitute

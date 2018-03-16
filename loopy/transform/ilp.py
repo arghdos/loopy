@@ -65,12 +65,13 @@ class ExtraInameIndexInserter(IdentityMapper):
 
 
 def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
-    if iname is not None:
-        logger.debug("%s: add axes to temporaries for ilp" % kernel.name)
+    logger.debug("%s: add axes to temporaries for ilp / vec" % kernel.name)
 
     wmap = kernel.writer_map()
+    itr_map = kernel.insn_to_reader_map()
 
     from loopy.kernel.data import IlpBaseTag, VectorizeTag
+    from loopy.kernel.array import VectorArrayDimTag
 
     var_to_new_ilp_inames = {}
 
@@ -81,11 +82,28 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
             writer_insn = kernel.id_to_insn[writer_insn_id]
 
             if iname is None:
-                ilp_inames = frozenset(iname
-                        for iname in kernel.insn_inames(writer_insn)
-                        if isinstance(
-                            kernel.iname_to_tag.get(iname),
-                            (IlpBaseTag, VectorizeTag)))
+                ilp_inames = set()
+                for iname in kernel.insn_inames(writer_insn):
+                    if isinstance(kernel.iname_to_tag.get(iname), IlpBaseTag):
+                        ilp_inames.add(iname)
+                    elif isinstance(kernel.iname_to_tag.get(iname), VectorizeTag):
+                        if itr_map[writer_insn_id]:
+                            # check all things that write to this temporary to see
+                            # if we can glean the intended ilp/vectorness
+                            for writer in itr_map[writer_insn_id]:
+                                if writer in kernel.temporary_variables:
+                                    writer = kernel.temporary_variables[writer]
+                                else:
+                                    writer = kernel.arg_dict[writer]
+                            if any(isinstance(dim, VectorArrayDimTag)
+                                  for dim in writer.dim_tags):
+                                # this is a vector assignment
+                                ilp_inames.add(iname)
+                        else:
+                            # default to vector assignment
+                            ilp_inames.add(iname)
+
+                ilp_inames = frozenset(ilp_inames)
             else:
                 if not isinstance(
                         kernel.iname_to_tag.get(iname),

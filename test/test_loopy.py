@@ -2847,6 +2847,42 @@ def test_explicit_simd_shuffles(ctx_factory):
                         answer, True)
 
 
+def test_explicit_simd_temporary_promotion(ctx_factory):
+    from loopy.kernel.data import temp_var_scope as scopes
+
+    ctx = ctx_factory()
+    queue = cl.CommandQueue(ctx)
+
+    # fun with vector temporaries
+
+    # first broken case -- incorrect promotion of temporaries to vector dtypes
+
+    knl = lp.make_kernel(
+        '{[i,j]: 0 <= i,j < 12}',
+        """
+        for j
+            for i
+                <int32> test = mask[i]
+                if test
+                    a[i, j] = 1
+                end
+            end
+        end
+        """,
+        [lp.GlobalArg('a', shape=(12, 12)),
+         lp.TemporaryVariable('mask', shape=(12,), initializer=np.array(
+                              np.arange(12) >= 6, dtype=np.int), read_only=True,
+                              scope=scopes.GLOBAL)])
+
+    knl = lp.split_iname(knl, 'j', 4, inner_tag='vec')
+    knl = lp.split_array_axis(knl, 'a', 1, 4)
+    knl = lp.tag_array_axes(knl, 'a', 'N1,N0,vec')
+
+    ans = np.zeros((12, 3, 4))
+    ans[6:, :, :] = 1
+    assert np.array_equal(knl(queue, a=np.zeros((12, 3, 4)))[1][0], ans)
+
+
 def test_check_for_variable_access_ordering():
     knl = lp.make_kernel(
             "{[i]: 0<=i<n}",

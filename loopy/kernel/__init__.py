@@ -779,6 +779,23 @@ class LoopKernel(ImmutableRecordWithoutPickling):
         return result
 
     @memoize_method
+    def insn_to_reader_map(self):
+        """
+        :return: a dict that maps instruction names to the variables that they read
+        """
+        result = {}
+
+        admissible_vars = (
+                set(arg.name for arg in self.args)
+                | set(six.iterkeys(self.temporary_variables)))
+
+        for insn in self.instructions:
+            for var_name in insn.read_dependency_names() & admissible_vars:
+                result.setdefault(insn.id, set()).add(var_name)
+
+        return result
+
+    @memoize_method
     def writer_map(self):
         """
         :return: a dict that maps variable names to ids of insns that write
@@ -789,6 +806,20 @@ class LoopKernel(ImmutableRecordWithoutPickling):
         for insn in self.instructions:
             for var_name in insn.assignee_var_names():
                 result.setdefault(var_name, set()).add(insn.id)
+
+        return result
+
+    @memoize_method
+    def insn_to_writer_map(self):
+        """
+        :return: a dict that maps instruction names to the variables that they write
+            to
+        """
+        result = {}
+
+        for insn in self.instructions:
+            for var_name in insn.assignee_var_names():
+                result.setdefault(insn.id, set()).add(var_name)
 
         return result
 

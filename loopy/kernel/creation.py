@@ -482,12 +482,16 @@ def parse_insn(groups, insn_options):
     new_lhs = []
     assignee_names = []
 
+    force_scalar = False
     for lhs_i in lhs:
         if isinstance(lhs_i, TypeAnnotation):
             if lhs_i.type is None:
                 temp_var_types.append(lp.auto)
             else:
                 temp_var_types.append(lhs_i.type)
+
+            if lhs_i.force_scalar:
+                force_scalar = True
 
             lhs_i = lhs_i.child
         else:
@@ -528,6 +532,7 @@ def parse_insn(groups, insn_options):
                     intern(insn_id)
                     if isinstance(insn_id, str)
                     else insn_id),
+                force_scalar=force_scalar,
                 **insn_options)
 
     from loopy.kernel.instruction import make_assignment
@@ -1445,7 +1450,8 @@ def create_temporaries(knl, default_order):
                         base_indices=lp.auto,
                         shape=lp.auto,
                         order=default_order,
-                        target=knl.target)
+                        target=knl.target,
+                        force_scalar=insn.force_scalar)
 
                 if isinstance(insn, Assignment):
                     insn = insn.copy(temp_var_type=None)

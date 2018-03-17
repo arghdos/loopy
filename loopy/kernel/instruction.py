@@ -785,11 +785,22 @@ class Assignment(MultiAssignmentBase):
                 EVALUATE ztemp_new = f(ztemp_old) + a
             WHILE compare_and_swap(z[i], ztemp_new, ztemp_old) did not succeed
 
+    .. attribute:: force_scalar
+
+        If True, temporary variable created from the assignee will be a scalar
+        variable, regardless of the vector status of the instruction.
+
+        .. note::
+
+            This is useful for OpenCL code-generation, to allow for if-statements
+            that do not depend on a vector temporary (which causes compilation
+            failures).
+
     .. automethod:: __init__
     """
 
     fields = MultiAssignmentBase.fields | \
-            set("assignee temp_var_type atomicity".split())
+            set("assignee temp_var_type atomicity force_scalar".split())
     pymbolic_fields = MultiAssignmentBase.pymbolic_fields | set(["assignee"])
 
     def __init__(self,
@@ -806,7 +817,8 @@ class Assignment(MultiAssignmentBase):
             temp_var_type=None, atomicity=(),
             priority=0, predicates=frozenset(),
             insn_deps=None, insn_deps_is_final=None,
-            forced_iname_deps=None, forced_iname_deps_is_final=None):
+            forced_iname_deps=None, forced_iname_deps_is_final=None,
+            force_scalar=False):
 
         super(Assignment, self).__init__(
                 id=id,
@@ -842,6 +854,7 @@ class Assignment(MultiAssignmentBase):
         self.expression = expression
         self.temp_var_type = temp_var_type
         self.atomicity = atomicity
+        self.force_scalar = force_scalar
 
     # {{{ implement InstructionBase interface
 
@@ -857,7 +870,8 @@ class Assignment(MultiAssignmentBase):
                 assignee=f(self.assignee, *args),
                 expression=f(self.expression, *args),
                 predicates=frozenset(
-                    f(pred, *args) for pred in self.predicates))
+                    f(pred, *args) for pred in self.predicates),
+                force_scalar=self.force_scalar)
 
     # }}}
 
@@ -1032,6 +1046,11 @@ class CallInstruction(MultiAssignmentBase):
         # issue altogether by disallowing atomicity.
         return ()
 
+    @property
+    def force_scalar(self):
+        # unified interface with Assignment
+        return False
+
 # }}}
 
 
@@ -1047,6 +1066,10 @@ def make_assignment(assignees, expression, temp_var_types=None, **kwargs):
         if not isinstance(expression, (Call, Reduction)):
             raise LoopyError("right-hand side in multiple assignment must be "
                     "function call or reduction, got: '%s'" % expression)
+
+        if kwargs.pop('force_scalar', False):
+            raise LoopyError("Force scalar option cannot be used with multiple "
+                             "assigments.")
 
         return CallInstruction(
                 assignees=assignees,

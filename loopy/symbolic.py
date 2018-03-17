@@ -104,7 +104,7 @@ class IdentityMapperMixin(object):
         return expr
 
     def map_type_annotation(self, expr, *args):
-        return type(expr)(expr.type, self.rec(expr.child))
+        return type(expr)(expr.type, self.rec(expr.child), expr.force_scalar)
 
     map_type_cast = map_type_annotation
 
@@ -416,13 +416,14 @@ class TypeAnnotation(p.Expression):
     assignments that create temporaries.
     """
 
-    def __init__(self, type, child):
+    def __init__(self, type, child, force_scalar=False):
         super(TypeAnnotation, self).__init__()
         self.type = type
         self.child = child
+        self.force_scalar = force_scalar
 
     def __getinitargs__(self):
-        return (self.type, self.child)
+        return (self.type, self.child, self.force_scalar)
 
     def stringifier(self):
         return StringifyMapper
@@ -1128,22 +1129,46 @@ class LoopyParser(ParserBase):
             return float(val)  # generic float
 
     def parse_prefix(self, pstate):
-        from pymbolic.parser import _PREC_UNARY, _less, _greater, _identifier
+        from pymbolic.parser import _PREC_UNARY, _less, _greater, _identifier, _colon
         if pstate.is_next(_less):
             pstate.advance()
+            force_scalar = None
             if pstate.is_next(_greater):
                 typename = None
+                pstate.advance()
+            elif pstate.is_next(_colon):
+                # force scalar specified
+                typename = None
+                pstate.advance()
+                pstate.expect(_identifier)
+                force_scalar = pstate.next_str_and_advance()
+                pstate.expect(_greater)
                 pstate.advance()
             else:
                 pstate.expect(_identifier)
                 typename = pstate.next_str()
                 pstate.advance()
+                force_scalar = None
+                # check for force scalar
+                if pstate.is_next(_colon):
+                    pstate.advance()
+                    pstate.expect(_identifier)
+                    force_scalar = pstate.next_str()
+                    pstate.advance()
+
                 pstate.expect(_greater)
                 pstate.advance()
 
+            if force_scalar:
+                if force_scalar != 's':
+                    raise TypeError("Cannot force assignment to type '{}'"
+                                    "did you mean, 's' (scalar)?" % force_scalar)
+                force_scalar = True
+
             return TypeAnnotation(
                     typename,
-                    self.parse_expression(pstate, _PREC_UNARY))
+                    self.parse_expression(pstate, _PREC_UNARY),
+                    force_scalar=force_scalar)
         else:
             return super(LoopyParser, self).parse_prefix(pstate)
 

@@ -85,7 +85,10 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
                         for iname in kernel.insn_inames(writer_insn)
                         if isinstance(
                             kernel.iname_to_tag.get(iname),
-                            (IlpBaseTag, VectorizeTag)))
+                            (IlpBaseTag, VectorizeTag))
+                        and not (tv.force_scalar and isinstance(
+                            kernel.iname_to_tag.get(iname), VectorizeTag))
+                        )
             else:
                 if not isinstance(
                         kernel.iname_to_tag.get(iname),

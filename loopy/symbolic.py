@@ -104,7 +104,10 @@ class IdentityMapperMixin(object):
         return expr
 
     def map_type_annotation(self, expr, *args):
-        return type(expr)(expr.type, self.rec(expr.child), expr.force_scalar)
+        kwargs = {}
+        if isinstance(expr, TypeAnnotation):
+            kwargs['force_scalar'] = expr.force_scalar
+        return type(expr)(expr.type, self.rec(expr.child), **kwargs)
 
     map_type_cast = map_type_annotation
 

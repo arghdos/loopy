@@ -1455,7 +1455,8 @@ def create_temporaries(knl, default_order):
                         shape=lp.auto,
                         order=default_order,
                         target=knl.target,
-                        force_scalar=insn.force_scalar)
+                        force_scalar=getattr(insn, 'force_scalar', False),
+                        force_vector=getattr(insn, 'force_vector', False))
 
                 if isinstance(insn, Assignment):
                     insn = insn.copy(temp_var_type=None)

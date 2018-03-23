@@ -389,6 +389,28 @@ class TemporaryVariable(ArrayBase):
             This is useful for OpenCL code-generation, to allow for if-statements
             that do not depend on a vector temporary (which causes compilation
             failures).
+
+    .. attribute:: force_scalar
+
+        If True, temporary variable created from the assignee will be a scalar
+        variable, regardless of the vector status of this assignment.
+
+        .. note::
+
+            This is useful for OpenCL code-generation, to allow for if-statements
+            that do not depend on a vector temporary (which causes compilation
+            failures).
+
+    .. attribute:: force_vector
+
+        If True, temporary variable created from the assignee will be a vector
+        variable, regardless of the vector status of this assignment.
+
+        .. note::
+
+            This is useful for OpenCL code-generation, to allow for if-statements
+            that do not depend on a vector temporary (which causes compilation
+            failures).
     """
 
     min_target_axes = 0
@@ -402,7 +424,8 @@ class TemporaryVariable(ArrayBase):
             "initializer",
             "read_only",
             "_base_storage_access_may_be_aliasing",
-            "force_scalar"
+            "force_scalar",
+            "force_vector"
             ]
 
     def __init__(self, name, dtype=None, shape=(), scope=auto,
@@ -410,7 +433,7 @@ class TemporaryVariable(ArrayBase):
             base_indices=None, storage_shape=None,
             base_storage=None, initializer=None, read_only=False,
             _base_storage_access_may_be_aliasing=False,
-            force_scalar=False, **kwargs):
+            force_scalar=False, force_vector=False, **kwargs):
         """
         :arg dtype: :class:`loopy.auto` or a :class:`numpy.dtype`
         :arg shape: :class:`loopy.auto` or a shape tuple
@@ -463,11 +486,12 @@ class TemporaryVariable(ArrayBase):
                     "are not currently supported "
                     "(did you mean to set read_only=True?)"
                     % name)
-        elif read_only and force_scalar:
+        elif read_only and (force_scalar or force_vector):
             raise LoopyError(
                 "temporary variable '%s': "
-                "cannot specify force_scalar for a read_only variable, force_scalar "
-                "applies only to temporary variables resulting from assignments."
+                "cannot specify force_scalar/force_vector for a read_only variable, "
+                "as these options apply only to temporary variables resulting from "
+                "assignments."
                 % name)
 
         if base_storage is not None and initializer is not None:
@@ -484,10 +508,11 @@ class TemporaryVariable(ArrayBase):
                     "base_storage given!"
                     % name)
 
-        if base_storage is not None and force_scalar:
+        if base_storage is not None and (force_scalar or force_vector):
             raise LoopyError(
                 "temporary variable '%s': "
-                "cannot specify force_scalar if base_storage is supplied."
+                "cannot specify force_scalar/force_vector if base_storage is "
+                "supplied."
                 % name)
 
         ArrayBase.__init__(self, name=intern(name),
@@ -502,6 +527,7 @@ class TemporaryVariable(ArrayBase):
                 _base_storage_access_may_be_aliasing=(
                     _base_storage_access_may_be_aliasing),
                 force_scalar=force_scalar,
+                force_vector=force_vector,
                 **kwargs)
 
     @property
@@ -567,6 +593,7 @@ class TemporaryVariable(ArrayBase):
                 and (self._base_storage_access_may_be_aliasing
                     == other._base_storage_access_may_be_aliasing)
                 and (self.force_scalar == other.force_scalar)
+                and (self.force_vector == other.force_vector)
                 )
 
     def update_persistent_hash(self, key_hash, key_builder):
@@ -589,6 +616,7 @@ class TemporaryVariable(ArrayBase):
         key_builder.rec(key_hash, self.read_only)
         key_builder.rec(key_hash, self._base_storage_access_may_be_aliasing)
         key_builder.rec(key_hash, self.force_scalar)
+        key_builder.rec(key_hash, self.force_vector)
 
 # }}}
 

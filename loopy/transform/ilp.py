@@ -65,14 +65,25 @@ class ExtraInameIndexInserter(IdentityMapper):
 
 
 def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
-    if iname is not None:
-        logger.debug("%s: add axes to temporaries for ilp" % kernel.name)
+    logger.debug("%s: add axes to temporaries for ilp%s" % (
+        kernel.name, '' if iname is not None else '/vec'))
 
     wmap = kernel.writer_map()
 
     from loopy.kernel.data import IlpBaseTag, VectorizeTag
+    from loopy.symbolic import get_dependencies
 
     var_to_new_ilp_inames = {}
+
+    def find_ilp_inames(writer_insn, iname, raise_on_missing=False):
+        # test that -- a) the iname is an ILP or vector tag
+        if isinstance(kernel.iname_to_tag.get(iname), (IlpBaseTag, VectorizeTag)):
+            # and b) instruction depends on the ILP/vector iname
+            return set([iname]) & (get_dependencies(writer_insn.expression) |
+                                   get_dependencies(writer_insn.assignee))
+        elif raise_on_missing:
+            raise LoopyError("'%s' is not an ILP iname" % iname)
+        return set()
 
     # {{{ find variables that need extra indices
 
@@ -80,25 +91,12 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
         for writer_insn_id in wmap.get(tv.name, []):
             writer_insn = kernel.id_to_insn[writer_insn_id]
 
-            if iname is None:
-                ilp_inames = frozenset(iname
-                        for iname in kernel.insn_inames(writer_insn)
-                        if isinstance(
-                            kernel.iname_to_tag.get(iname),
-                            (IlpBaseTag, VectorizeTag))
-                        and not (tv.force_scalar and isinstance(
-                            kernel.iname_to_tag.get(iname), VectorizeTag))
-                        )
-            else:
-                if not isinstance(
-                        kernel.iname_to_tag.get(iname),
-                        (IlpBaseTag, VectorizeTag)):
-                    raise LoopyError(
-                            "'%s' is not an ILP iname"
-                            % iname)
+            test_inames = kernel.insn_inames(writer_insn) if iname is None else iname
+            ilp_inames = set()
+            for ti in test_inames:
+                ilp_inames |= find_ilp_inames(writer_insn, ti, iname is not None)
 
-                ilp_inames = frozenset([iname])
-
+            ilp_inames = frozenset(ilp_inames)
             referenced_ilp_inames = (ilp_inames
                     & writer_insn.write_dependency_names())
 

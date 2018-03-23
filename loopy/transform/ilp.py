@@ -71,7 +71,6 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
     wmap = kernel.writer_map()
 
     from loopy.kernel.data import IlpBaseTag, VectorizeTag
-    from loopy.symbolic import get_dependencies
 
     var_to_new_ilp_inames = {}
 
@@ -84,8 +83,7 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
             elif writer_insn.force_vector:
                 return set([iname])
             # and b) instruction depends on the ILP/vector iname
-            return set([iname]) & (get_dependencies(writer_insn.expression) |
-                                   get_dependencies(writer_insn.assignee))
+            return set([iname]) & writer_insn.dependency_names()
         elif raise_on_missing:
             raise LoopyError("'%s' is not an ILP iname" % iname)
         return set()
@@ -107,25 +105,26 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
 
             new_ilp_inames = ilp_inames - referenced_ilp_inames
 
+            if not new_ilp_inames and writer_insn.force_scalar and \
+                    tv.name in var_to_new_ilp_inames:
+                # conflict
+                raise LoopyError("instruction '%s' requires var '%s' to be a scalar "
+                                 "but previous instructions required vector/ILP "
+                                 "inames '%s'" % (writer_insn_id, tv.name, ", ".join(
+                                        var_to_new_ilp_inames[tv.name])))
+
             if not new_ilp_inames:
                 continue
 
             if tv.name in var_to_new_ilp_inames:
                 if new_ilp_inames != set(var_to_new_ilp_inames[tv.name]):
-                    # either 1) the previous iname were empty -> upgrade
-                    if not set(var_to_new_ilp_inames[tv.name]):
-                        logger.debug("Expanding vector/ILP inames considered for "
-                                     "var '%s' from empty set to '%s' for insn '%s'"
-                                     % (tv.name, ", ".join(new_ilp_inames),
-                                        writer_insn_id))
-                    else:
-                        # or 2) there is a conflict
-                        raise LoopyError("instruction '%s' requires adding "
-                                "indices for vector/ILP inames '%s' on var '%s', "
-                                "but previous instructions required inames '%s'"
-                                % (writer_insn_id, ", ".join(new_ilp_inames),
-                                    tv.name, ", ".join(
-                                        var_to_new_ilp_inames[tv.name])))
+                    # conflict
+                    raise LoopyError("instruction '%s' requires adding "
+                            "indices for vector/ILP inames '%s' on var '%s', "
+                            "but previous instructions required inames '%s'"
+                            % (writer_insn_id, ", ".join(new_ilp_inames),
+                                tv.name, ", ".join(
+                                    var_to_new_ilp_inames[tv.name])))
 
                 continue
 

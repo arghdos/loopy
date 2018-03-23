@@ -71,6 +71,7 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
     wmap = kernel.writer_map()
 
     from loopy.kernel.data import IlpBaseTag, VectorizeTag
+    from loopy.kernel.tools import find_recursive_dependencies
 
     var_to_new_ilp_inames = {}
 
@@ -92,43 +93,53 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
 
     for tv in six.itervalues(kernel.temporary_variables):
         for writer_insn_id in wmap.get(tv.name, []):
-            writer_insn = kernel.id_to_insn[writer_insn_id]
+            # the instructions we have to consider here are those that directly
+            # write to this variable, and those that are recursive dependencies of
+            # this instruction
 
-            test_inames = kernel.insn_inames(writer_insn) if iname is None else iname
-            ilp_inames = set()
-            for ti in test_inames:
-                ilp_inames |= find_ilp_inames(writer_insn, ti, iname is not None)
+            writer_insns = set([writer_insn_id]) | \
+                find_recursive_dependencies(kernel, frozenset([writer_insn_id]))
 
-            ilp_inames = frozenset(ilp_inames)
-            referenced_ilp_inames = (ilp_inames
-                    & writer_insn.write_dependency_names())
+            for inner_id in writer_insns:
+                writer_insn = kernel.id_to_insn[inner_id]
 
-            new_ilp_inames = ilp_inames - referenced_ilp_inames
+                test_inames = kernel.insn_inames(writer_insn) if iname is None else \
+                    iname
+                ilp_inames = set()
+                for ti in test_inames:
+                    ilp_inames |= find_ilp_inames(writer_insn, ti, iname is not None)
 
-            if not new_ilp_inames and writer_insn.force_scalar and \
-                    tv.name in var_to_new_ilp_inames:
-                # conflict
-                raise LoopyError("instruction '%s' requires var '%s' to be a scalar "
-                                 "but previous instructions required vector/ILP "
-                                 "inames '%s'" % (writer_insn_id, tv.name, ", ".join(
+                ilp_inames = frozenset(ilp_inames)
+                referenced_ilp_inames = (ilp_inames
+                        & writer_insn.write_dependency_names())
+
+                new_ilp_inames = ilp_inames - referenced_ilp_inames
+
+                if not new_ilp_inames and writer_insn.force_scalar and \
+                        tv.name in var_to_new_ilp_inames:
+                    # conflict
+                    raise LoopyError("instruction '%s' requires var '%s' to be a "
+                                     "scalar but previous instructions required "
+                                     "vector/ILP inames '%s'" % (
+                                            inner_id, tv.name, ", ".join(
+                                                var_to_new_ilp_inames[tv.name])))
+
+                if not new_ilp_inames:
+                    continue
+
+                if tv.name in var_to_new_ilp_inames:
+                    if new_ilp_inames != set(var_to_new_ilp_inames[tv.name]):
+                        # conflict
+                        raise LoopyError("instruction '%s' requires adding "
+                                "indices for vector/ILP inames '%s' on var '%s', "
+                                "but previous instructions required inames '%s'"
+                                % (inner_id, ", ".join(new_ilp_inames),
+                                    tv.name, ", ".join(
                                         var_to_new_ilp_inames[tv.name])))
 
-            if not new_ilp_inames:
-                continue
+                    continue
 
-            if tv.name in var_to_new_ilp_inames:
-                if new_ilp_inames != set(var_to_new_ilp_inames[tv.name]):
-                    # conflict
-                    raise LoopyError("instruction '%s' requires adding "
-                            "indices for vector/ILP inames '%s' on var '%s', "
-                            "but previous instructions required inames '%s'"
-                            % (writer_insn_id, ", ".join(new_ilp_inames),
-                                tv.name, ", ".join(
-                                    var_to_new_ilp_inames[tv.name])))
-
-                continue
-
-            var_to_new_ilp_inames[tv.name] = set(new_ilp_inames)
+                var_to_new_ilp_inames[tv.name] = set(new_ilp_inames)
 
     # }}}
 

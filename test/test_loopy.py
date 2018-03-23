@@ -2909,6 +2909,13 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
     knl = make_kernel('<> test = mask[j]')
     assert knl.temporary_variables['test'].shape == (4,)
 
+    # case 2) recursive dependency
+    knl = make_kernel("""
+        <> test = mask[j]
+        <> test2 = test
+        """)
+    assert knl.temporary_variables['test2'].shape == (4,)
+
 
 def test_check_for_variable_access_ordering():
     knl = lp.make_kernel(

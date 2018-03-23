@@ -2736,7 +2736,7 @@ def test_preamble_with_separate_temporaries(ctx_factory):
 
     print(lp.generate_code(kernel)[0])
     # and call (functionality unimportant, more that it compiles)
-    ctx = cl.create_some_context()
+    ctx = ctx_factory()
     queue = cl.CommandQueue(ctx)
     # check that it actually performs the lookup correctly
     assert np.allclose(kernel(

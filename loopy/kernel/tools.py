@@ -1160,6 +1160,7 @@ def get_visual_iname_order_embedding(kernel):
 
 # {{{ find_recursive_dependencies
 
+@memoize_method
 def find_recursive_dependencies(kernel, insn_ids):
     queue = list(insn_ids)
 

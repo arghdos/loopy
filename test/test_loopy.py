@@ -2863,34 +2863,51 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
         <int32> t1 = 1
         <int32:s> t2 = 1
         <:s> t3 = 1
+        <:v> tv = 1
+        <int32> tv1 = 1
+        <int32:v> tv2 = 1
+        <:v> tv3 = 1
         """)
 
-    # first broken case -- incorrect promotion of temporaries to vector dtypes
-
-    knl = lp.make_kernel(
-        '{[i,j]: 0 <= i,j < 12}',
-        """
-        for j
-            for i
-                <:s> test = mask[i]
-                if test
-                    a[i, j] = 1
+    def make_kernel(insn, ans=None):
+        knl = lp.make_kernel(
+            '{[i,j]: 0 <= i,j < 12}',
+            """
+            for j
+                for i
+                    %(insn)s
+                    if test
+                        a[i, j] = 1
+                    end
                 end
             end
-        end
-        """,
-        [lp.GlobalArg('a', shape=(12, 12)),
-         lp.TemporaryVariable('mask', shape=(12,), initializer=np.array(
-                              np.arange(12) >= 6, dtype=np.int), read_only=True,
-                              scope=scopes.GLOBAL)])
+            """ % dict(insn=insn),
+            [lp.GlobalArg('a', shape=(12, 12)),
+             lp.TemporaryVariable('mask', shape=(12,), initializer=np.array(
+                                  np.arange(12) >= 6, dtype=np.int), read_only=True,
+                                  scope=scopes.GLOBAL)])
 
-    knl = lp.split_iname(knl, 'j', 4, inner_tag='vec')
-    knl = lp.split_array_axis(knl, 'a', 1, 4)
-    knl = lp.tag_array_axes(knl, 'a', 'N1,N0,vec')
+        knl = lp.split_iname(knl, 'j', 4, inner_tag='vec')
+        knl = lp.split_array_axis(knl, 'a', 1, 4)
+        knl = lp.tag_array_axes(knl, 'a', 'N1,N0,vec')
+        knl = lp.preprocess_kernel(knl)
+
+        if ans is not None:
+            assert np.array_equal(knl(queue, a=np.zeros((12, 3, 4), dtype=np.int32))[
+                1][0], ans)
+
+        return knl
 
     ans = np.zeros((12, 3, 4))
     ans[6:, :, :] = 1
-    assert np.array_equal(knl(queue, a=np.zeros((12, 3, 4)))[1][0], ans)
+    # first broken case -- incorrect promotion of temporaries to vector dtypes
+    make_kernel('<> test = mask[i]', ans)
+
+    # next test the writer heuristic
+
+    # case 1) assignment from a vector iname
+    knl = make_kernel('<> test = mask[j]')
+    assert knl.temporary_variables['test'].shape == (4,)
 
 
 def test_check_for_variable_access_ordering():

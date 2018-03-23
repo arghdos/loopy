@@ -78,6 +78,11 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
     def find_ilp_inames(writer_insn, iname, raise_on_missing=False):
         # test that -- a) the iname is an ILP or vector tag
         if isinstance(kernel.iname_to_tag.get(iname), (IlpBaseTag, VectorizeTag)):
+            # check for user specified type
+            if writer_insn.force_scalar:
+                return set()
+            elif writer_insn.force_vector:
+                return set([iname])
             # and b) instruction depends on the ILP/vector iname
             return set([iname]) & (get_dependencies(writer_insn.expression) |
                                    get_dependencies(writer_insn.assignee))

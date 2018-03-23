@@ -1059,16 +1059,6 @@ class CallInstruction(MultiAssignmentBase):
         # issue altogether by disallowing atomicity.
         return ()
 
-    @property
-    def force_scalar(self):
-        # unified interface with Assignment
-        return False
-
-    @property
-    def force_vector(self):
-        # unified interface with Assignment
-        return False
-
 # }}}
 
 
@@ -1276,17 +1266,6 @@ class CInstruction(InstructionBase):
 
         return first_line + "\n    " + "\n    ".join(
                 self.code.split("\n"))
-
-    @property
-    def force_scalar(self):
-        # unified interface with Assignment
-        return False
-
-    @property
-    def force_vector(self):
-        # unified interface with Assignment
-        return False
-
 
 # }}}
 

@@ -75,13 +75,19 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
 
     var_to_new_ilp_inames = {}
 
+    def force_scalar(insn):
+        return getattr(insn, 'force_scalar', False)
+
+    def force_vector(insn):
+        return getattr(insn, 'force_vector', False)
+
     def find_ilp_inames(writer_insn, iname, raise_on_missing=False):
         # test that -- a) the iname is an ILP or vector tag
         if isinstance(kernel.iname_to_tag.get(iname), (IlpBaseTag, VectorizeTag)):
             # check for user specified type
-            if writer_insn.force_scalar:
+            if force_scalar(writer_insn):
                 return set()
-            elif writer_insn.force_vector:
+            elif force_vector(writer_insn):
                 return set([iname])
             # and b) instruction depends on the ILP/vector iname
             return set([iname]) & writer_insn.dependency_names()
@@ -115,7 +121,7 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
 
                 new_ilp_inames = ilp_inames - referenced_ilp_inames
 
-                if not new_ilp_inames and writer_insn.force_scalar and \
+                if not new_ilp_inames and force_scalar(writer_insn) and \
                         tv.name in var_to_new_ilp_inames:
                     # conflict
                     raise LoopyError("instruction '%s' requires var '%s' to be a "

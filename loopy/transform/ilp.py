@@ -108,15 +108,24 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
             new_ilp_inames = ilp_inames - referenced_ilp_inames
 
             if not new_ilp_inames:
-                break
+                continue
 
             if tv.name in var_to_new_ilp_inames:
                 if new_ilp_inames != set(var_to_new_ilp_inames[tv.name]):
-                    raise LoopyError("instruction '%s' requires adding "
-                            "indices for ILP inames '%s' on var '%s', but previous "
-                            "instructions required inames '%s'"
-                            % (writer_insn_id, ", ".join(new_ilp_inames),
-                                ", ".join(var_to_new_ilp_inames[tv.name])))
+                    # either 1) the previous iname were empty -> upgrade
+                    if not set(var_to_new_ilp_inames[tv.name]):
+                        logger.debug("Expanding vector/ILP inames considered for "
+                                     "var '%s' from empty set to '%s' for insn '%s'"
+                                     % (tv.name, ", ".join(new_ilp_inames),
+                                        writer_insn_id))
+                    else:
+                        # or 2) there is a conflict
+                        raise LoopyError("instruction '%s' requires adding "
+                                "indices for vector/ILP inames '%s' on var '%s', "
+                                "but previous instructions required inames '%s'"
+                                % (writer_insn_id, ", ".join(new_ilp_inames),
+                                    tv.name, ", ".join(
+                                        var_to_new_ilp_inames[tv.name])))
 
                 continue
 

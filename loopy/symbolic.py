@@ -1141,7 +1141,7 @@ class LoopyParser(ParserBase):
         from pymbolic.parser import _PREC_UNARY, _less, _greater, _identifier, _colon
         if pstate.is_next(_less):
             pstate.advance()
-            force_type = None
+            scalar_or_vec = None
             if pstate.is_next(_greater):
                 typename = None
                 pstate.advance()
@@ -1172,13 +1172,12 @@ class LoopyParser(ParserBase):
                     raise TypeError("Cannot force assignment to type '{}'"
                                     "did you mean, 's' (scalar) or 'v' (vector)?" %
                                     scalar_or_vec)
-                force_type = scalar_or_vec
 
             return TypeAnnotation(
                     typename,
                     self.parse_expression(pstate, _PREC_UNARY),
-                    force_scalar=force_type == 's',
-                    force_vector=force_type == 'v')
+                    force_scalar=scalar_or_vec == 's',
+                    force_vector=scalar_or_vec == 'v')
         else:
             return super(LoopyParser, self).parse_prefix(pstate)
 

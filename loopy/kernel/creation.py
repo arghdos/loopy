@@ -483,6 +483,7 @@ def parse_insn(groups, insn_options):
     assignee_names = []
 
     force_scalar = False
+    force_vector = False
     for lhs_i in lhs:
         if isinstance(lhs_i, TypeAnnotation):
             if lhs_i.type is None:
@@ -492,6 +493,8 @@ def parse_insn(groups, insn_options):
 
             if lhs_i.force_scalar:
                 force_scalar = True
+            elif lhs_i.force_vector:
+                force_vector = True
 
             lhs_i = lhs_i.child
         else:
@@ -533,6 +536,7 @@ def parse_insn(groups, insn_options):
                     if isinstance(insn_id, str)
                     else insn_id),
                 force_scalar=force_scalar,
+                force_vector=force_vector,
                 **insn_options)
 
     from loopy.kernel.instruction import make_assignment

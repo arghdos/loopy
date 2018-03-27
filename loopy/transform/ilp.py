@@ -93,23 +93,29 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
     # {{{ find variables that need extra indices
 
     for tv in six.itervalues(kernel.temporary_variables):
-        for writer_insn_id in wmap.get(tv.name, []):
+        writer_insns = set(wmap.get(tv.name, []))
+
+        for writer_insn_id in writer_insns:
+            writer_insn = kernel.id_to_insn[writer_insn_id]
+            inner_ids = set([writer_insn_id])
             # the instructions we have to consider here are those that directly
             # write to this variable, and those that are recursive dependencies of
             # this instruction
+            rec_deps = find_recursive_dependencies(kernel, frozenset([
+                writer_insn_id]))
+            # however, we must make sure to limit to those inames that we are
+            # actually inside of
+            inner_ids |= set([
+                x for x in rec_deps if kernel.id_to_insn[x].within_inames <=
+                writer_insn.within_inames])
 
-            writer_insns = set([writer_insn_id]) | \
-                find_recursive_dependencies(kernel, frozenset([writer_insn_id]))
-
-            for inner_id in writer_insns:
-                writer_insn = kernel.id_to_insn[inner_id]
-
-                test_inames = kernel.insn_inames(writer_insn) if iname is None else \
-                    iname
+            for insn_id in inner_ids:
+                insn = kernel.id_to_insn[insn_id]
+                test_inames = (kernel.insn_inames(insn) if iname is None else
+                    set([iname]))
                 ilp_inames = set()
                 for ti in test_inames:
-                    ilp_inames |= find_ilp_inames(writer_insn, ti, tv,
-                                                  iname is not None)
+                    ilp_inames |= find_ilp_inames(insn, ti, tv, iname is not None)
 
                 ilp_inames = frozenset(ilp_inames)
                 referenced_ilp_inames = (ilp_inames
@@ -123,7 +129,7 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
                     raise LoopyError("instruction '%s' requires var '%s' to be a "
                                      "scalar but previous instructions required "
                                      "vector/ILP inames '%s'" % (
-                                            inner_id, tv.name, ", ".join(
+                                            insn_id, tv.name, ", ".join(
                                                 var_to_new_ilp_inames[tv.name])))
 
                 if not new_ilp_inames:
@@ -135,7 +141,7 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
                         raise LoopyError("instruction '%s' requires adding "
                                 "indices for vector/ILP inames '%s' on var '%s', "
                                 "but previous instructions required inames '%s'"
-                                % (inner_id, ", ".join(new_ilp_inames),
+                                % (insn_id, ", ".join(new_ilp_inames),
                                     tv.name, ", ".join(
                                         var_to_new_ilp_inames[tv.name])))
 

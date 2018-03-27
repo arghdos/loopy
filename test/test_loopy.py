@@ -2869,19 +2869,24 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
         <:v> tv3 = 1
         """)
 
-    def make_kernel(insn, ans=None):
-        knl = lp.make_kernel(
-            '{[i,j]: 0 <= i,j < 12}',
-            """
-            for j
-                for i
-                    %(insn)s
-                    if test
-                        a[i, j] = 1
-                    end
+    def make_kernel(insn, ans=None, preamble=None, extra_inames=None):
+        skeleton = """
+        %(preamble)s
+        for j
+            for i
+                %(insn)s
+                if test
+                    a[i, j] = 1
                 end
             end
-            """ % dict(insn=insn),
+        end
+        """
+        inames = ['i, j']
+        if extra_inames is not None:
+            inames += list(extra_inames)
+        knl = lp.make_kernel(
+            '{[%(inames)s]: 0 <= %(inames)s < 12}' % {'inames': ', '.join(inames)},
+            skeleton % dict(insn=insn, preamble='' if not preamble else preamble),
             [lp.GlobalArg('a', shape=(12, 12)),
              lp.TemporaryVariable('mask', shape=(12,), initializer=np.array(
                                   np.arange(12) >= 6, dtype=np.int), read_only=True,
@@ -2915,6 +2920,19 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
         <> test2 = test
         """)
     assert knl.temporary_variables['test2'].shape == (4,)
+
+    # case 3) test that a conflict in user-specified vector types results in error
+
+    # 3a) initial scalar assignment w/ later vector access
+    preamble = """
+    for k
+        <:s> test = 1
+    end
+    """
+
+    from loopy import LoopyError
+    with pytest.raises(LoopyError):
+        make_kernel('test = mask[j]', preamble=preamble, extra_inames='k')
 
 
 def test_check_for_variable_access_ordering():

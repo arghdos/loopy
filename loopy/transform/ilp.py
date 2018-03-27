@@ -213,8 +213,14 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
         new_insn = insn.with_transformed_expressions(eiii)
         if not eiii.seen_ilp_inames <= insn.within_inames:
 
-            from loopy.diagnostic import warn_with_kernel
-            warn_with_kernel(
+            # the only O.K. case here is that the user specified that the instruction
+            # should be a vector, and all the missing iname tags are vectors.
+            if not getattr(insn, 'force_vector', False) and all(isinstance(
+                kernel.iname_to_tag.get(iname), VectorizeTag) for x in
+                    eiii.seen_ilp_inames - insn.within_inames):
+
+                from loopy.diagnostic import warn_with_kernel
+                warn_with_kernel(
                     kernel,
                     "implicit_ilp_iname",
                     "Instruction '%s': touched variable that (for ILP) "

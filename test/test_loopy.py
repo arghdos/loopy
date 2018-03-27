@@ -2932,7 +2932,22 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
 
     from loopy import LoopyError
     with pytest.raises(LoopyError):
-        k = make_kernel('test = mask[j]', preamble=preamble, extra_inames='k')
+        make_kernel('test = mask[j]', preamble=preamble, extra_inames='k')
+
+    # 3b) initial vector assignment w/ later scalar access -- OK
+
+    preamble = """
+    for k
+        <:v> test = 1
+    end
+    """
+
+    from loopy import LoopyError
+    # treat warning as error to make sure the logic detecting user specified
+    # vectorization is good
+    import warnings
+    warnings.filterwarnings('error')
+    make_kernel('test = mask[i]', preamble=preamble, extra_inames='k')
 
 
 def test_check_for_variable_access_ordering():

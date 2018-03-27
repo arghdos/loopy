@@ -81,6 +81,12 @@ def add_axes_to_temporaries_for_ilp_and_vec(kernel, iname=None):
         if isinstance(kernel.iname_to_tag.get(iname), (IlpBaseTag, VectorizeTag)):
             # check for user specified type
             if temp_var.force_scalar:
+                if iname in writer_insn.read_dependency_names():
+                    raise LoopyError(
+                        "Cannot write to (user-specified) scalar variable '%s' "
+                        "using vec/ILP iname '%s' in instruction '%s'." % (
+                            temp_var.name, iname, writer_insn.id)
+                        )
                 return set()
             elif temp_var.force_vector:
                 return set([iname])

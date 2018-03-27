@@ -2932,7 +2932,7 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
 
     from loopy import LoopyError
     with pytest.raises(LoopyError):
-        make_kernel('test = mask[j]', preamble=preamble, extra_inames='k')
+        k = make_kernel('test = mask[j]', preamble=preamble, extra_inames='k')
 
 
 def test_check_for_variable_access_ordering():

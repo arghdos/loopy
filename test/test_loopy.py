@@ -2946,8 +2946,14 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
     # treat warning as error to make sure the logic detecting user specified
     # vectorization is good
     import warnings
-    warnings.filterwarnings('error')
-    make_kernel('test = mask[i]', preamble=preamble, extra_inames='k')
+    try:
+        warnings.filterwarnings(
+            'error', r"Instruction '[^\W]+': touched variable that \(for ILP\)")
+        make_kernel('test = mask[i]', preamble=preamble, extra_inames='k')
+    except Exception:
+        raise
+    finally:
+        warnings.resetwarnings()
 
 
 def test_check_for_variable_access_ordering():

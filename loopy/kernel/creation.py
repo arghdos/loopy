@@ -37,9 +37,11 @@ from loopy.kernel.data import (
 from loopy.diagnostic import LoopyError, warn_with_kernel
 import islpy as isl
 from islpy import dim_type
+from pytools import ProcessLogger
 
 import six
 from six.moves import range, zip, intern
+import loopy.version
 
 import re
 
@@ -1936,7 +1938,7 @@ def make_kernel(domains, instructions, kernel_data=["..."], **kwargs):
         To set the kernel version for all :mod:`loopy` kernels in a (Python) source
         file, you may simply say::
 
-            from loopy.version import LOOPY_USE_LANGUAGE_VERSION_2018_1
+            from loopy.version import LOOPY_USE_LANGUAGE_VERSION_2018_2
 
         If *lang_version* is not explicitly given, that version value will be used.
 
@@ -1955,10 +1957,9 @@ def make_kernel(domains, instructions, kernel_data=["..."], **kwargs):
         *seq_dependencies* added.
     """
 
-    from time import time
-    logger.debug(
-            "%s: kernel creation start" % kwargs.get("name", "(unnamed)"))
-    kernel_creation_start_time = time()
+    creation_plog = ProcessLogger(
+            logger,
+            "%s: instantiate" % kwargs.get("name", "(unnamed)"))
 
     defines = kwargs.pop("defines", {})
     default_order = kwargs.pop("default_order", "C")
@@ -1992,11 +1993,17 @@ def make_kernel(domains, instructions, kernel_data=["..."], **kwargs):
     from loopy.options import make_options
     options = make_options(options)
 
+    # {{{ handle kernel language version
+
+    from loopy.version import LANGUAGE_VERSION_SYMBOLS
+
+    version_to_symbol = dict(
+            (getattr(loopy.version, lvs), lvs)
+            for lvs in LANGUAGE_VERSION_SYMBOLS)
+
     lang_version = kwargs.pop("lang_version", None)
     if lang_version is None:
         # {{{ peek into caller's module to look for LOOPY_KERNEL_LANGUAGE_VERSION
-
-        from loopy.version import LANGUAGE_VERSION_SYMBOLS
 
         # This *is* gross. But it seems like the right thing interface-wise.
         import inspect
@@ -2010,11 +2017,6 @@ def make_kernel(domains, instructions, kernel_data=["..."], **kwargs):
                 pass
 
         # }}}
-
-        import loopy.version
-        version_to_symbol = dict(
-                (getattr(loopy.version, lvs), lvs)
-                for lvs in LANGUAGE_VERSION_SYMBOLS)
 
         if lang_version is None:
             from warnings import warn
@@ -2036,11 +2038,14 @@ def make_kernel(domains, instructions, kernel_data=["..."], **kwargs):
 
             lang_version = FALLBACK_LANGUAGE_VERSION
 
-        if lang_version not in version_to_symbol:
-            raise LoopyError("Language version '%s' is not known." % lang_version)
-
+    if lang_version not in version_to_symbol:
+        raise LoopyError("Language version '%s' is not known." % (lang_version,))
     if lang_version >= (2018, 1):
         options = options.copy(enforce_variable_access_ordered=True)
+    if lang_version >= (2018, 2):
+        options = options.copy(ignore_boostable_into=True)
+
+    # }}}
 
     if isinstance(silenced_warnings, str):
         silenced_warnings = silenced_warnings.split(";")
@@ -2179,14 +2184,7 @@ def make_kernel(domains, instructions, kernel_data=["..."], **kwargs):
     from loopy.preprocess import prepare_for_caching
     knl = prepare_for_caching(knl)
 
-    creation_elapsed = time() - kernel_creation_start_time
-    if creation_elapsed > 0.1:
-        time_logger = logger.info
-    else:
-        time_logger = logger.debug
-
-    time_logger(
-            "%s: kernel creation done after %g s", knl.name, creation_elapsed)
+    creation_plog.done()
 
     return knl
 

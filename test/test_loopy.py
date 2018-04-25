@@ -2905,25 +2905,25 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
 
     ans = np.zeros((12, 3, 4))
     ans[6:, :, :] = 1
-    # first broken case -- incorrect promotion of temporaries to vector dtypes
+    # case 1) -- incorrect promotion of temporaries to vector dtypes
     make_kernel('<> test = mask[i]', ans)
 
     # next test the writer heuristic
 
-    # case 1) assignment from a vector iname
+    # case 2) assignment from a vector iname
     knl = make_kernel('<> test = mask[j]')
     assert knl.temporary_variables['test'].shape == (4,)
 
-    # case 2) recursive dependency
+    # case 3) recursive dependency
     knl = make_kernel("""
         <> test = mask[j]
         <> test2 = test
         """)
     assert knl.temporary_variables['test2'].shape == (4,)
 
-    # case 3) test that a conflict in user-specified vector types results in error
+    # case 4) test that a conflict in user-specified vector types results in error
 
-    # 3a) initial scalar assignment w/ later vector access
+    # 4a) initial scalar assignment w/ later vector access
     preamble = """
     for k
         <:s> test = 1
@@ -2934,7 +2934,7 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
     with pytest.raises(LoopyError):
         make_kernel('test = mask[j]', preamble=preamble, extra_inames='k')
 
-    # 3b) initial vector assignment w/ later scalar access -- OK
+    # 4b) initial vector assignment w/ later scalar access -- OK
 
     preamble = """
     for k

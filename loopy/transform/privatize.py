@@ -147,7 +147,10 @@ def privatize_temporaries_with_inames(
         if only_var_names is not None and tv.name not in only_var_names:
             continue
 
+        seen = set()
         for writer_insn_id in set(wmap.get(tv.name, [])):
+            if writer_insn_id in seen:
+                continue
             writer_insn = kernel.id_to_insn[writer_insn_id]
             inner_ids = set([writer_insn_id])
             # the instructions we have to consider here are those that directly
@@ -162,6 +165,8 @@ def privatize_temporaries_with_inames(
                 writer_insn.within_inames])
 
             for insn_id in inner_ids:
+                seen.add(insn_id)
+
                 insn = kernel.id_to_insn[insn_id]
                 test_inames = kernel.insn_inames(insn) & privatizing_inames
 

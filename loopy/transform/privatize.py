@@ -104,6 +104,10 @@ def privatize_temporaries_with_inames(
 
     .. versionadded:: 2018.1
     """
+
+    from loopy.kernel.data import VectorizeTag, IlpBaseTag
+    from loopy.kernel.tools import find_recursive_dependencies
+
     if isinstance(privatizing_inames, str):
         privatizing_inames = frozenset(
                 s.strip()
@@ -118,113 +122,86 @@ def privatize_temporaries_with_inames(
 
     var_to_new_priv_axis_iname = {}
 
-    # def find_ilp_inames(writer_insn, iname, temp_var,
-    #                     raise_on_missing=False):
-    #     # test that -- a) the iname is an ILP or vector tag
-    #     if isinstance(kernel.iname_to_tag.get(iname), (IlpBaseTag, VectorizeTag)):
-    #         # check for user specified type
-    #         if temp_var.force_scalar:
-    #             if iname in writer_insn.read_dependency_names():
-    #                 raise LoopyError(
-    #                     "Cannot write to (user-specified) scalar variable '%s' "
-    #                     "using vec/ILP iname '%s' in instruction '%s'." % (
-    #                         temp_var.name, iname, writer_insn.id)
-    #                     )
-    #             return set()
-    #         elif temp_var.force_vector:
-    #             return set([iname])
-    #         # and b) instruction depends on the ILP/vector iname
-    #         return set([iname]) & writer_insn.dependency_names()
-    #     elif raise_on_missing:
-    #         raise LoopyError("'%s' is not an ILP iname" % iname)
-    #     return set()
+    def find_privitzing_inames(writer_insn, iname, temp_var):
+        # test that -- a) the iname is an ILP or vector tag
+        if isinstance(kernel.iname_to_tag.get(iname), (IlpBaseTag, VectorizeTag)):
+            # check for user specified type
+            if temp_var.force_scalar:
+                if iname in writer_insn.read_dependency_names():
+                    raise LoopyError(
+                        "Cannot write to (user-specified) scalar variable '%s' "
+                        "using vec/ILP iname '%s' in instruction '%s'." % (
+                            temp_var.name, iname, writer_insn.id)
+                        )
+                return set()
+            elif temp_var.force_vector:
+                return set([iname])
+            # and b) instruction depends on the ILP/vector iname
+            return set([iname]) & writer_insn.dependency_names()
+        return set()
 
     # {{{ find variables that need extra indices
 
     for tv in six.itervalues(kernel.temporary_variables):
+        # check variables to transform
         if only_var_names is not None and tv.name not in only_var_names:
             continue
 
-        for writer_insn_id in wmap.get(tv.name, []):
+        for writer_insn_id in set(wmap.get(tv.name, [])):
             writer_insn = kernel.id_to_insn[writer_insn_id]
+            inner_ids = set([writer_insn_id])
+            # the instructions we have to consider here are those that directly
+            # write to this variable, and those that are recursive dependencies of
+            # this instruction
+            rec_deps = find_recursive_dependencies(kernel, frozenset([
+                writer_insn_id]))
+            # however, we must make sure to limit to those inames that we are
+            # actually inside of
+            inner_ids |= set([
+                x for x in rec_deps if kernel.id_to_insn[x].within_inames <=
+                writer_insn.within_inames])
 
-            priv_axis_inames = kernel.insn_inames(writer_insn) & privatizing_inames
+            for insn_id in inner_ids:
+                insn = kernel.id_to_insn[insn_id]
+                test_inames = kernel.insn_inames(insn) & privatizing_inames
 
-            referenced_priv_axis_inames = (priv_axis_inames
+                priv_axis_inames = set()
+                for ti in test_inames:
+                    priv_axis_inames |= find_privitzing_inames(insn, ti, tv)
+
+                priv_axis_inames = frozenset(priv_axis_inames)
+                referenced_priv_axis_inames = (priv_axis_inames
                     & writer_insn.write_dependency_names())
 
-            new_priv_axis_inames = priv_axis_inames - referenced_priv_axis_inames
+                new_priv_axis_inames = priv_axis_inames - referenced_priv_axis_inames
 
-            if not new_priv_axis_inames:
-                break
+                if not new_priv_axis_inames and tv.force_scalar and \
+                        tv.name in var_to_new_priv_axis_iname:
+                    # conflict
+                    raise LoopyError("instruction '%s' requires var '%s' to be a "
+                                     "scalar but previous instructions required "
+                                     "vector/ILP inames '%s'" % (
+                                            insn_id, tv.name, ", ".join(
+                                                var_to_new_priv_axis_iname[
+                                                    tv.name])))
 
-            if tv.name in var_to_new_priv_axis_iname:
-                if new_priv_axis_inames != set(var_to_new_priv_axis_iname[tv.name]):
-                    raise LoopyError("instruction '%s' requires adding "
-                            "indices for privatizing var '%s' on iname(s) '%s', "
-                            "but previous instructions required inames '%s'"
-                            % (writer_insn_id, tv.name,
-                                ", ".join(new_priv_axis_inames),
-                                ", ".join(var_to_new_priv_axis_iname[tv.name])))
+                if not new_priv_axis_inames:
+                    continue
 
-            var_to_new_priv_axis_iname[tv.name] = set(new_priv_axis_inames)
+                if tv.name in var_to_new_priv_axis_iname:
+                    if new_priv_axis_inames != set(
+                            var_to_new_priv_axis_iname[tv.name]):
+                        # conflict
+                        raise LoopyError("instruction '%s' requires adding "
+                                "indices for vector/ILP inames '%s' on var '%s', "
+                                "but previous instructions required inames '%s'"
+                                % (insn_id, ", ".join(new_priv_axis_inames),
+                                    tv.name, ", ".join(
+                                        var_to_new_priv_axis_iname[tv.name])))
 
-    # for tv in six.itervalues(kernel.temporary_variables):
-    #     writer_insns = set(wmap.get(tv.name, []))
+                    continue
 
-        # for writer_insn_id in writer_insns:
-        #     writer_insn = kernel.id_to_insn[writer_insn_id]
-        #     inner_ids = set([writer_insn_id])
-        #     # the instructions we have to consider here are those that directly
-        #     # write to this variable, and those that are recursive dependencies of
-        #     # this instruction
-        #     rec_deps = find_recursive_dependencies(kernel, frozenset([
-        #         writer_insn_id]))
-        #     # however, we must make sure to limit to those inames that we are
-        #     # actually inside of
-        #     inner_ids |= set([
-        #         x for x in rec_deps if kernel.id_to_insn[x].within_inames <=
-        #         writer_insn.within_inames])
-
-        #     for insn_id in inner_ids:
-        #         insn = kernel.id_to_insn[insn_id]
-        #         test_inames = (kernel.insn_inames(insn) if iname is None else
-        #             set([iname]))
-        #         ilp_inames = set()
-        #         for ti in test_inames:
-        #             ilp_inames |= find_ilp_inames(insn, ti, tv, iname is not None)
-
-        #         ilp_inames = frozenset(ilp_inames)
-        #         referenced_ilp_inames = (ilp_inames
-        #                 & writer_insn.write_dependency_names())
-
-        #         new_ilp_inames = ilp_inames - referenced_ilp_inames
-
-        #         if not new_ilp_inames and tv.force_scalar and \
-        #                 tv.name in var_to_new_ilp_inames:
-        #             # conflict
-        #             raise LoopyError("instruction '%s' requires var '%s' to be a "
-        #                              "scalar but previous instructions required "
-        #                              "vector/ILP inames '%s'" % (
-        #                                     insn_id, tv.name, ", ".join(
-        #                                         var_to_new_ilp_inames[tv.name])))
-
-        #         if not new_ilp_inames:
-        #             continue
-
-        #         if tv.name in var_to_new_ilp_inames:
-        #             if new_ilp_inames != set(var_to_new_ilp_inames[tv.name]):
-        #                 # conflict
-        #                 raise LoopyError("instruction '%s' requires adding "
-        #                         "indices for vector/ILP inames '%s' on var '%s', "
-        #                         "but previous instructions required inames '%s'"
-        #                         % (insn_id, ", ".join(new_ilp_inames),
-        #                             tv.name, ", ".join(
-        #                                 var_to_new_ilp_inames[tv.name])))
-
-        #             continue
-
-        #         var_to_new_ilp_inames[tv.name] = set(new_ilp_inames)
+                var_to_new_priv_axis_iname[tv.name] = set(new_priv_axis_inames)
 
     # }}}
 
@@ -249,8 +226,6 @@ def privatize_temporaries_with_inames(
     # }}}
 
     # {{{ change temporary variables
-
-    from loopy.kernel.data import VectorizeTag
 
     new_temp_vars = kernel.temporary_variables.copy()
     for tv_name, inames in six.iteritems(var_to_new_priv_axis_iname):
@@ -284,21 +259,14 @@ def privatize_temporaries_with_inames(
     for insn in kernel.instructions:
         eiii = ExtraInameIndexInserter(var_to_extra_iname)
         new_insn = insn.with_transformed_expressions(eiii)
-        # if not eiii.seen_ilp_inames <= insn.within_inames:
-
-        #     # the only O.K. case here is that the user specified that the instruction
-        #     # should be a vector, and all the missing iname tags are vectors.
-        #     if not getattr(insn, 'force_vector', False) and all(isinstance(
-        #         kernel.iname_to_tag.get(iname), VectorizeTag) for x in
-        #             eiii.seen_ilp_inames - insn.within_inames):
-
-        #         from loopy.diagnostic import warn_with_kernel
-        #         warn_with_kernel(
-        #             kernel,
-        #             "implicit_ilp_iname",
-        #             "Instruction '%s': touched variable that (for ILP) "
         if not eiii.seen_priv_axis_inames <= insn.within_inames:
-            raise LoopyError(
+
+            # the only O.K. case here is that the user specified that the instruction
+            # should be a vector, and all the missing iname tags are vectors.
+            if not getattr(insn, 'force_vector', False) and all(isinstance(
+                kernel.iname_to_tag.get(iname), VectorizeTag) for x in
+                    eiii.seen_ilp_inames - insn.within_inames):
+                raise LoopyError(
                     "Kernel '%s': Instruction '%s': touched variable that "
                     "(for privatization, e.g. as performed for ILP) "
                     "required iname(s) '%s', but that the instruction was not "

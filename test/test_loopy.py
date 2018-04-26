@@ -2856,7 +2856,8 @@ def test_explicit_simd_shuffles(ctx_factory):
     create_and_test("a[j, (i + 2) % 4 + 4 * (i // 4)] = b[j, i]", shuffled)
     # test atomics
     from loopy import LoopyError
-    with pytest.raises(LoopyError):
+    from loopy.codegen import Unvectorizable
+    with pytest.raises((LoopyError, Unvectorizable)):
         temp = np.arange(12, dtype=np.int32)
         answer = np.zeros(4, dtype=np.int32)
         for i in range(4):
@@ -2974,8 +2975,8 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
         warnings.resetwarnings()
 
 
-@pytest.mark.xfail('Weird conditional dropping for the case that actually should'
-                   'work')
+@pytest.mark.xfail("Weird conditional dropping for the case that actually "
+                   "should work")
 def test_explicit_simd_selects(ctx_factory):
     ctx = ctx_factory()
 

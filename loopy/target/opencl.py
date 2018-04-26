@@ -692,7 +692,7 @@ class OpenCLCASTBuilder(CASTBuilder):
             #
             # Both cases should fail (as we can't take the index of an unrolled
             # atomic)
-            raise LoopyError('Atomic operators not yet implemented for '
+            raise LoopyError('Atomic operators not implemented for '
                              'explicit-SIMD vectorization')
 
         if isinstance(lhs_dtype, NumpyType) and lhs_dtype.numpy_dtype in [

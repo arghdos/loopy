@@ -254,14 +254,18 @@ def merge_codegen_results(codegen_state, elements, collapse=True):
                 **kwargs))
 
 
-def wrap_in_if(codegen_state, condition_exprs, inner):
+def wrap_in_if(codegen_state, condition_exprs, inner, vector=False):
     if condition_exprs:
         from pymbolic.primitives import LogicalAnd
         from pymbolic.mapper.stringifier import PREC_NONE
         cur_ast = inner.current_ast(codegen_state)
+        if vector:
+            method = codegen_state.ast_builder.emit_if
+        else:
+            method = codegen_state.ast_builder.emit_vector_if
         return inner.with_new_ast(
                 codegen_state,
-                codegen_state.ast_builder.emit_if(
+                method(
                     codegen_state.expression_to_code_mapper(
                         LogicalAnd(tuple(condition_exprs)), PREC_NONE),
                     cur_ast))

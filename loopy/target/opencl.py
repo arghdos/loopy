@@ -434,18 +434,18 @@ class VectorLoad(VectorFunc):
 
 
 class VectorSelect(VectorFunc):
-    def __init__(self, select_if_true, select_if_false, select_on):
+    def __init__(self, select_if_true, select_if_false, condition):
         """
         Represents a vector-select
 
         :arg select_if_true: the value to be chosen if select_on is true
         :arg select_if_false: the value to be chosen if select_on is false
-        :arg select_on: the conditional selection value
+        :arg condition: the conditional selection value
         """
 
         name = 'select'
         super(VectorSelect, self).__init__(name, (
-            select_if_true, select_if_false, select_on))
+            select_if_true, select_if_false, condition))
 
 # }}}
 
@@ -551,6 +551,18 @@ class OpenCLCASTBuilder(CASTBuilder):
         except AttributeError:
             pass
         return assignment
+
+    def emit_vector_if(self, condition_str, ast):
+        """
+        Emit's a vector select function
+        """
+
+        try:
+            return VectorSelect(ast.rvalue.expr, ast.lvalue.expr, condition_str)
+        except AttributeError:
+            raise LoopyError("Vector conditionals can only be generated for simple"
+                             "assign statements, condition (%s) on instruction (%s) "
+                             "invalid" % (condition_str, str(ast)))
 
     def add_vector_access(self, access_expr, index):
         # The 'int' avoids an 'L' suffix for long ints.

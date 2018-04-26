@@ -2974,6 +2974,54 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
         warnings.resetwarnings()
 
 
+def test_explicit_simd_selects(ctx_factory):
+    ctx = ctx_factory()
+
+    def create_and_test(insn, condition, answer, exception=None, a=None, b=None):
+        a = np.zeros(12, dtype=np.int32) if a is None else a
+        data = [lp.GlobalArg('a', shape=a.shape, dtype=a.dtype)]
+        kwargs = dict(a=a)
+        if b is not None:
+            data += [lp.GlobalArg('b', shape=b.shape, dtype=b.dtype)]
+            kwargs['b'] = b
+        names = [d.name for d in data]
+
+        knl = lp.make_kernel(['{[i]: 0 <= i < 12}'],
+            """
+            if %(condition)s
+                %(insn)s
+            end
+            """ % dict(condition=condition,
+                       insn=insn),
+            data
+            )
+
+        knl = lp.split_iname(knl, 'i', 4, inner_tag='vec')
+        knl = lp.split_array_axis(knl, names, 0, 4)
+        knl = lp.tag_array_axes(knl, names, 'N0,vec')
+
+        queue = cl.CommandQueue(ctx)
+        if exception is not None:
+            with pytest.raises(exception):
+                print(lp.generate_code_v2(knl).device_code())
+
+        if exception is not None:
+            with pytest.raises(exception):
+                knl(queue, **kwargs)
+        else:
+            result = knl(queue, **kwargs)[1][0]
+            assert np.array_equal(result.flatten('C'), answer)
+
+    ans = np.zeros(12, dtype=np.int32)
+    ans[7:] = 1
+    # 1) test a conditional on a vector iname -- currently unimplemented
+    create_and_test('a[i] = 1', 'i > 6', ans, exception=NotImplementedError)
+    # 2) condition on a vector variable -- unimplemented as the i_inner in the
+    # condition currently isn't resolved
+    create_and_test('a[i] = 1', 'b[i] > 6', ans, b=np.arange(12, dtype=np.int32),
+                    exception=NotImplementedError)
+
+
 def test_check_for_variable_access_ordering():
     knl = lp.make_kernel(
             "{[i]: 0<=i<n}",

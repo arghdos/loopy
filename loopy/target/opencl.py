@@ -684,10 +684,11 @@ class OpenCLCASTBuilder(CASTBuilder):
         # FIXME: Could detect operations, generate atomic_{add,...} when
         # appropriate.
 
-        if codegen_state.vectorization_info is not None:
+        if codegen_state.vectorization_info is not None or \
+                codegen_state.insn_was_not_vectorizable:
             # note - this check whether we've previously tried to vectorize and
-            # failed (in which case vectorization_info will be False) or whether
-            # vectorization_info is a valid :class:`VectorizationInfo`
+            # failed (in which case insn_was_not_vectorizable will be True) or
+            # whether vectorization_info is a valid :class:`VectorizationInfo`
             #
             # Both cases should fail (as we can't take the index of an unrolled
             # atomic)

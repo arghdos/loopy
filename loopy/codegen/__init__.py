@@ -178,6 +178,11 @@ class CodeGenerationState(object):
 
         None or an instance of :class:`VectorizationInfo`
 
+    .. attribute:: insn_was_not_vectorizable
+
+        If true, we have a call to :func:`try_vectorized` has failed, and we are
+        in the :func:`unvectorize` fallback
+
     .. attribute:: is_generating_device_code
 
     .. attribute:: gen_program_name
@@ -219,13 +224,18 @@ class CodeGenerationState(object):
             var_subst_map=None, vectorization_info=None,
             is_generating_device_code=None,
             gen_program_name=None,
-            schedule_index_end=None):
+            schedule_index_end=None,
+            insn_was_not_vectorizable=False):
 
         if kernel is None:
             kernel = self.kernel
 
         if implemented_data_info is None:
             implemented_data_info = self.implemented_data_info
+
+        if vectorization_info is False:
+            insn_was_not_vectorizable = True
+            vectorization_info = None
 
         if vectorization_info is None:
             vectorization_info = self.vectorization_info
@@ -254,7 +264,8 @@ class CodeGenerationState(object):
                 var_name_generator=self.var_name_generator,
                 is_generating_device_code=is_generating_device_code,
                 gen_program_name=gen_program_name,
-                schedule_index_end=schedule_index_end)
+                schedule_index_end=schedule_index_end,
+                insn_was_not_vectorizable=insn_was_not_vectorizable)
 
     def copy_and_assign(self, name, value):
         """Make a copy of self with variable *name* fixed to *value*."""

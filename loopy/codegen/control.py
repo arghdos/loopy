@@ -533,7 +533,7 @@ def build_loop_nest(codegen_state, schedule_index):
                                 knl.temporary_variables.values()) if any(
                                     isinstance(dt, VectorArrayDimTag)
                                     for dt in x.dim_tags)])
-                            vec_if |= vec_arys & deps
+                            vec_if |= len(vec_arys & deps)
 
                     return [wrap_in_if(
                         inner_codegen_state,

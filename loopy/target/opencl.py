@@ -537,16 +537,19 @@ class OpenCLCASTBuilder(CASTBuilder):
             codegen_state, insn)
 
         # fix-up
-        if isinstance(assignment.lvalue.expr, VectorLoad):
-            from cgen import Statement
-            # get vector width
-            func = str(assignment.lvalue.expr.function)
-            vw = int(func[func.index('vload') + len('vload'):])
-            # convert to vector store
-            store = VectorStore(vw, assignment.rvalue.expr,
-                                *assignment.lvalue.expr.parameters)
-            # and to statement
-            assignment = Statement(str(store))
+        try:
+            if isinstance(assignment.lvalue.expr, VectorLoad):
+                from cgen import Statement
+                # get vector width
+                func = str(assignment.lvalue.expr.function)
+                vw = int(func[func.index('vload') + len('vload'):])
+                # convert to vector store
+                store = VectorStore(vw, assignment.rvalue.expr,
+                                    *assignment.lvalue.expr.parameters)
+                # and to statement
+                assignment = Statement(str(store))
+        except AttributeError:
+            pass
         return assignment
 
     def add_vector_access(self, access_expr, index):

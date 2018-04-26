@@ -260,9 +260,9 @@ def wrap_in_if(codegen_state, condition_exprs, inner, vector=False):
         from pymbolic.mapper.stringifier import PREC_NONE
         cur_ast = inner.current_ast(codegen_state)
         if vector:
-            method = codegen_state.ast_builder.emit_if
-        else:
             method = codegen_state.ast_builder.emit_vector_if
+        else:
+            method = codegen_state.ast_builder.emit_if
         return inner.with_new_ast(
                 codegen_state,
                 method(

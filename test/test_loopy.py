@@ -2977,7 +2977,8 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
 def test_explicit_simd_selects(ctx_factory):
     ctx = ctx_factory()
 
-    def create_and_test(insn, condition, answer, exception=None, a=None, b=None):
+    def create_and_test(insn, condition, answer, exception=None, a=None, b=None,
+                        extra_insns=''):
         a = np.zeros(12, dtype=np.int32) if a is None else a
         data = [lp.GlobalArg('a', shape=a.shape, dtype=a.dtype)]
         kwargs = dict(a=a)
@@ -2988,11 +2989,13 @@ def test_explicit_simd_selects(ctx_factory):
 
         knl = lp.make_kernel(['{[i]: 0 <= i < 12}'],
             """
+            %(extra_insns)s
             if %(condition)s
                 %(insn)s
             end
             """ % dict(condition=condition,
-                       insn=insn),
+                       insn=insn,
+                       extra_insns=extra_insns),
             data
             )
 
@@ -3020,6 +3023,8 @@ def test_explicit_simd_selects(ctx_factory):
     # condition currently isn't resolved
     create_and_test('a[i] = 1', 'b[i] > 6', ans, b=np.arange(12, dtype=np.int32),
                     exception=NotImplementedError)
+    # and 3) just so we have something to test, a scalar condition
+    create_and_test('a[i] = 1', 'c > 6', np.ones_like(ans), extra_insns='<>c = 7')
 
 
 def test_check_for_variable_access_ordering():

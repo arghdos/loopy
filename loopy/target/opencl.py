@@ -560,9 +560,9 @@ class OpenCLCASTBuilder(CASTBuilder):
         try:
             return VectorSelect(ast.rvalue.expr, ast.lvalue.expr, condition_str)
         except AttributeError:
-            raise LoopyError("Vector conditionals can only be generated for simple"
+            raise LoopyError("Vector conditionals can only be generated for simple "
                              "assign statements, condition (%s) on instruction (%s) "
-                             "invalid" % (condition_str, str(ast)))
+                             "invalid" % (str(condition_str), str(ast)))
 
     def add_vector_access(self, access_expr, index):
         # The 'int' avoids an 'L' suffix for long ints.

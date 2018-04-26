@@ -2800,10 +2800,11 @@ def test_add_prefetch_works_in_lhs_index():
 def test_explicit_simd_shuffles(ctx_factory):
     ctx = ctx_factory()
 
-    def create_and_test(insn, answer=None, atomic=False, additional_check=None):
+    def create_and_test(insn, answer=None, atomic=False, additional_check=None,
+                        store=False):
         knl = lp.make_kernel(['{[i]: 0 <= i < 12}', '{[j]: 0 <= j < 1}'],
                              insn,
-                             [lp.GlobalArg('a', shape=(1, 12,), dtype=np.int32,
+                             [lp.GlobalArg('a', shape=(1, 14,), dtype=np.int32,
                                            for_atomic=atomic),
                               lp.GlobalArg('b', shape=(1, 14,), dtype=np.int32,
                                            for_atomic=atomic)])
@@ -2816,9 +2817,13 @@ def test_explicit_simd_shuffles(ctx_factory):
         print(lp.generate_code_v2(knl).device_code())
         queue = cl.CommandQueue(ctx)
         if answer is None:
-            answer = np.arange(2, 14, dtype=np.int32)
+            answer = np.zeros(16, dtype=np.int32)
+            if store:
+                answer[2:-2] = np.arange(0, 12, dtype=np.int32)
+            else:
+                answer[:-4] = np.arange(2, 14, dtype=np.int32)
         assert np.array_equal(
-            knl(queue, a=np.zeros((1, 3, 4), dtype=np.int32),
+            knl(queue, a=np.zeros((1, 4, 4), dtype=np.int32),
                 b=np.arange(16, dtype=np.int32).reshape((1, 4, 4)))[1][0].flatten(
                     'C'),
             answer)
@@ -2833,6 +2838,15 @@ def test_explicit_simd_shuffles(ctx_factory):
     create_and_test("a[j, i] = b[j, i + 2]")
     create_and_test("a[j, i] = b[j, i + 2] + a[j, i]")
     create_and_test("a[j, i] = a[j, i] + b[j, i + 2]")
+    # test vector stores
+    create_and_test("<>c = 2\n" +
+                    "a[j, i + c] = b[j, i]",
+                    additional_check=lambda knl: 'vstore' in lp.generate_code_v2(
+                        knl).device_code(),
+                    store=True)
+    create_and_test("a[j, i + 2] = b[j, i]", store=True)
+    create_and_test("a[j, i + 2] = b[j, i] + a[j, i + 2]", store=True)
+    create_and_test("a[j, i + 2] = a[j, i + 2] + b[j, i]", store=True)
     # test small vector shuffle
     create_and_test("a[j, i] = b[j, (i + 2) % 4]",
                     np.arange(12, dtype=np.int32)[(np.arange(12) + 2) % 4])

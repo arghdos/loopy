@@ -201,7 +201,8 @@ class CodeGenerationState(object):
             vectorization_info=None, var_name_generator=None,
             is_generating_device_code=None,
             gen_program_name=None,
-            schedule_index_end=None):
+            schedule_index_end=None,
+            insn_was_not_vectorizable=False):
         self.kernel = kernel
         self.implemented_data_info = implemented_data_info
         self.implemented_domain = implemented_domain
@@ -216,6 +217,7 @@ class CodeGenerationState(object):
         self.is_generating_device_code = is_generating_device_code
         self.gen_program_name = gen_program_name
         self.schedule_index_end = schedule_index_end
+        self.insn_was_not_vectorizable = insn_was_not_vectorizable
 
     # {{{ copy helpers
 

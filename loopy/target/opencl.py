@@ -34,6 +34,7 @@ from loopy.types import NumpyType
 from loopy.target.c import DTypeRegistryWrapper, c_math_mangler
 from loopy.kernel.data import temp_var_scope, CallMangleInfo
 from pymbolic import var
+from pymbolic.primitives import Call
 
 from functools import partial
 
@@ -387,6 +388,67 @@ class OpenCLTarget(CTarget):
 
 # }}}
 
+# {{{ simple opencl function wrappers
+
+
+class VectorFunc(Call):
+    def __init__(self, function, parameters):
+        # check that function and parameters are variables
+        from pymbolic.primitives import Variable, Expression
+        if not isinstance(function, Variable):
+            function = var(function)
+        parameters = list(parameters)
+        for i, param in enumerate(parameters):
+            if not isinstance(param, (Variable, Expression)):
+                parameters[i] = var(str(param))
+        super(VectorFunc, self).__init__(function, tuple(parameters))
+
+
+class VectorStore(VectorFunc):
+    def __init__(self, vector_width, store, offset, array):
+        """
+        Represents a vstoren
+
+        :arg vector_width: the SIMD vector-width
+        :arg store: the data to store
+        :arg offset: the offset in the array
+        :arg array: the array to store the data in
+        """
+
+        name = 'vstore%d' % vector_width
+        super(VectorStore, self).__init__(name, (store, offset, array))
+
+
+class VectorLoad(VectorFunc):
+    def __init__(self, vector_width, offset, array):
+        """
+        Represents a vloadn
+
+        :arg vector_width: the SIMD vector-width
+        :arg offset: the offset in the array
+        :arg array: the array to store the data in
+        """
+
+        name = 'vload%d' % vector_width
+        super(VectorLoad, self).__init__(name, (offset, array))
+
+
+class VectorSelect(VectorFunc):
+    def __init__(self, select_if_true, select_if_false, select_on):
+        """
+        Represents a vector-select
+
+        :arg select_if_true: the value to be chosen if select_on is true
+        :arg select_if_false: the value to be chosen if select_on is false
+        :arg select_on: the conditional selection value
+        """
+
+        name = 'select'
+        super(VectorSelect, self).__init__(name, (
+            select_if_true, select_if_false, select_on))
+
+# }}}
+
 
 # {{{ ast builder
 
@@ -465,6 +527,28 @@ class OpenCLCASTBuilder(CASTBuilder):
     def get_expression_to_c_expression_mapper(self, codegen_state):
         return ExpressionToOpenCLCExpressionMapper(codegen_state)
 
+    def emit_assignment(self, codegen_state, insn):
+        """
+        A wrapper around the base C-target emit_assignment, to handle explicit-SIMD
+        functions, such as selects, vstore's and vload's and shuffles
+        """
+
+        assignment = super(OpenCLCASTBuilder, self).emit_assignment(
+            codegen_state, insn)
+
+        # fix-up
+        if isinstance(assignment.lvalue.expr, VectorLoad):
+            from cgen import Statement
+            # get vector width
+            func = str(assignment.lvalue.expr.function)
+            vw = int(func[func.index('vload') + len('vload'):])
+            # convert to vector store
+            store = VectorStore(vw, assignment.rvalue.expr,
+                                *assignment.lvalue.expr.parameters)
+            # and to statement
+            assignment = Statement(str(store))
+        return assignment
+
     def add_vector_access(self, access_expr, index):
         # The 'int' avoids an 'L' suffix for long ints.
         def __map(ind, use_prefix=True):
@@ -503,9 +587,7 @@ class OpenCLCASTBuilder(CASTBuilder):
             pass
         # and cast / substitute in the calculated vector iname offset
         cast_expr = '&((%s)%s)[%s]' % (ctype, array.name, index[0])
-        from pymbolic.primitives import Call, Variable
-        return Call(Variable('vload%d' % len(index)), (
-            Variable(str(offset)), Variable(cast_expr)))
+        return VectorLoad(len(index), str(offset), str(cast_expr))
 
     def emit_barrier(self, synchronization_kind, mem_kind, comment):
         """

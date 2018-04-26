@@ -2822,11 +2822,12 @@ def test_explicit_simd_shuffles(ctx_factory):
                 answer[2:-2] = np.arange(0, 12, dtype=np.int32)
             else:
                 answer[:-4] = np.arange(2, 14, dtype=np.int32)
-        assert np.array_equal(
-            knl(queue, a=np.zeros((1, 4, 4), dtype=np.int32),
-                b=np.arange(16, dtype=np.int32).reshape((1, 4, 4)))[1][0].flatten(
-                    'C'),
-            answer)
+
+        a = np.zeros((1, 4, 4), dtype=np.int32)
+        b = np.arange(16, dtype=np.int32).reshape((1, 4, 4))
+        result = knl(queue, a=a, b=b)[1][0]
+
+        assert np.array_equal(result.flatten('C'), answer)
         if additional_check is not None:
             assert additional_check(knl)
 
@@ -2848,8 +2849,11 @@ def test_explicit_simd_shuffles(ctx_factory):
     create_and_test("a[j, i + 2] = b[j, i] + a[j, i + 2]", store=True)
     create_and_test("a[j, i + 2] = a[j, i + 2] + b[j, i]", store=True)
     # test small vector shuffle
-    create_and_test("a[j, i] = b[j, (i + 2) % 4]",
-                    np.arange(12, dtype=np.int32)[(np.arange(12) + 2) % 4])
+    shuffled = np.arange(16, dtype=np.int32)[(np.arange(16) + 2) % 4 +
+                                              4 * (np.arange(16) // 4)]
+    shuffled[12:] = 0
+    create_and_test("a[j, i] = b[j, (i + 2) % 4 + 4 * (i // 4)]", shuffled)
+    create_and_test("a[j, (i + 2) % 4 + 4 * (i // 4)] = b[j, i]", shuffled)
     # test atomics
     from loopy import LoopyError
     with pytest.raises(LoopyError):

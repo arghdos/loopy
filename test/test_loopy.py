@@ -3007,11 +3007,6 @@ def test_explicit_simd_selects(ctx_factory):
         knl = lp.tag_array_axes(knl, names, 'N0,vec')
 
         queue = cl.CommandQueue(ctx)
-        try:
-            print(lp.generate_code_v2(knl).device_code())
-        except exception:
-            pass
-
         if exception is not None:
             with pytest.raises(exception):
                 knl(queue, **kwargs)
@@ -3021,12 +3016,14 @@ def test_explicit_simd_selects(ctx_factory):
 
     ans = np.zeros(12, dtype=np.int32)
     ans[7:] = 1
-    # 1) test a conditional on a vector iname -- currently unimplemented
-    create_and_test('a[i] = 1', 'i > 6', ans, exception=NotImplementedError)
+    from loopy.diagnostic import LoopyError
+    # 1) test a conditional on a vector iname -- currently unimplemented as it
+    # would require creating a 'shadow' vector iname temporary
+    create_and_test('a[i] = 1', 'i > 6', ans, exception=LoopyError)
     # 2) condition on a vector variable -- unimplemented as the i_inner in the
     # condition currently isn't resolved
-    create_and_test('a[i] = 1', 'b[i] > 6', ans, b=np.arange(12, dtype=np.int32),
-                    exception=NotImplementedError)
+    create_and_test('a[i] = 1', 'b[i] > 6', ans, b=np.arange(
+        12, dtype=np.int32).reshape((3, 4)))
 
 
 def test_check_for_variable_access_ordering():

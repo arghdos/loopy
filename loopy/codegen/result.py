@@ -268,7 +268,6 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
 
         if codegen_state.vectorization_info is not None:
             from loopy.symbolic import get_dependencies
-            method = codegen_state.ast_builder.emit_vector_if
             vec_iname = codegen_state.vectorization_info.iname
 
             def check_vec_dep(condition):
@@ -296,6 +295,7 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
 
                     return condition
 
+                method = codegen_state.ast_builder.emit_vector_if
                 mapper = condition_mapper_wrapper
 
         return inner.with_new_ast(

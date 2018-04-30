@@ -507,39 +507,10 @@ def build_loop_nest(codegen_state, schedule_index):
 
                     prev_result = prev_gen_code(inner_codegen_state)
 
-                    # determine if any conditions are vector
-                    try:
-                        vec_if = False
-                        vec_iname = inner_codegen_state.vectorization_info.iname
-                    except AttributeError:
-                        # no vectorization info
-                        pass
-                    else:
-                        deps = set()
-                        for x in condition_exprs:
-                            deps |= get_dependencies(x)
-                        deps = frozenset(deps)
-                        if deps & set([vec_iname]):
-                            # we'd have to insert our own mirror temporary of the
-                            # vector iname here
-                            vec_if = True
-                            raise NotImplementedError(
-                                "Can't use vector iname directly in conditional")
-                        else:
-                            from loopy.kernel.array import VectorArrayDimTag
-                            # check if any vector arrays are in condition
-                            knl = inner_codegen_state.kernel
-                            vec_arys = set([x.name for x in knl.args + list(
-                                knl.temporary_variables.values()) if any(
-                                    isinstance(dt, VectorArrayDimTag)
-                                    for dt in x.dim_tags)])
-                            vec_if |= len(vec_arys & deps)
-
-                    return [wrap_in_if(
-                        inner_codegen_state,
-                        condition_exprs,
-                        merge_codegen_results(codegen_state, prev_result),
-                        vector=vec_if)]
+                    inner = merge_codegen_results(codegen_state, prev_result)
+                    return [new_codegen_state.try_vectorized(
+                        inner.current_ast(inner_codegen_state),
+                        lambda ics: wrap_in_if(ics, condition_exprs, inner))]
 
                 cannot_vectorize = False
                 if new_codegen_state.vectorization_info is not None:

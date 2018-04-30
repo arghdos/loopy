@@ -2984,7 +2984,7 @@ def test_explicit_simd_selects(ctx_factory):
         data = [lp.GlobalArg('a', shape=(12,), dtype=a.dtype)]
         kwargs = dict(a=a)
         if b is not None:
-            data += [lp.GlobalArg('b', shape=b.shape, dtype=b.dtype)]
+            data += [lp.GlobalArg('b', shape=(12,), dtype=b.dtype)]
             kwargs['b'] = b
         names = [d.name for d in data]
 

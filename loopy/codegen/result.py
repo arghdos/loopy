@@ -254,21 +254,53 @@ def merge_codegen_results(codegen_state, elements, collapse=True):
                 **kwargs))
 
 
-def wrap_in_if(codegen_state, condition_exprs, inner, vector=False):
+def wrap_in_if(codegen_state, condition_exprs, inner):
     if condition_exprs:
         from pymbolic.primitives import LogicalAnd
         from pymbolic.mapper.stringifier import PREC_NONE
         cur_ast = inner.current_ast(codegen_state)
-        if vector:
+        method = codegen_state.ast_builder.emit_if
+
+        def condition_mapper():
+            return codegen_state.expression_to_code_mapper(
+                    LogicalAnd(tuple(condition_exprs)), PREC_NONE)
+        mapper = condition_mapper
+
+        if codegen_state.vectorization_info is not None:
+            from loopy.symbolic import get_dependencies
             method = codegen_state.ast_builder.emit_vector_if
-        else:
-            method = codegen_state.ast_builder.emit_if
+            vec_iname = codegen_state.vectorization_info.iname
+
+            def check_vec_dep(condition):
+                # check conditions for explicit vector iname dependecies
+                return len(get_dependencies(condition) & set([vec_iname]))
+
+            if any(check_vec_dep(cond) for cond in condition_exprs):
+                # condition directly involves a vector array or iname
+
+                def condition_mapper_wrapper():
+                    condition = condition_mapper()
+                    from loopy.diagnostic import LoopyError
+                    deps = set()
+                    try:
+                        for condition in condition.expr.children:
+                            deps |= get_dependencies(condition)
+
+                        if deps & set([vec_iname]):
+                            # we'd have to insert our own mirror temporary of the
+                            # vector iname here
+                            raise LoopyError("Can't directly use vector iname in "
+                                             "conditional")
+                    except (AttributeError, TypeError):
+                        pass
+
+                    return condition
+
+                mapper = condition_mapper_wrapper
+
         return inner.with_new_ast(
                 codegen_state,
-                method(
-                    codegen_state.expression_to_code_mapper(
-                        LogicalAnd(tuple(condition_exprs)), PREC_NONE),
-                    cur_ast))
+                method(mapper(), cur_ast))
 
     return inner
 

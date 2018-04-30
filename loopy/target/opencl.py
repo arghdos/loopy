@@ -445,7 +445,7 @@ class VectorSelect(VectorFunc):
 
         name = 'select'
         super(VectorSelect, self).__init__(name, (
-            select_if_true, select_if_false, condition))
+            select_if_false, select_if_true, condition))
 
 # }}}
 
@@ -558,7 +558,9 @@ class OpenCLCASTBuilder(CASTBuilder):
         """
 
         try:
-            return VectorSelect(ast.rvalue.expr, ast.lvalue.expr, condition_str)
+            from cgen import Assign
+            return Assign(str(ast.lvalue.expr), str(VectorSelect(
+                ast.rvalue.expr, ast.lvalue.expr, condition_str)))
         except AttributeError:
             raise LoopyError("Vector conditionals can only be generated for simple "
                              "assign statements, condition (%s) on instruction (%s) "

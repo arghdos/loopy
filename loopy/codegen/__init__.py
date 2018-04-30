@@ -226,8 +226,7 @@ class CodeGenerationState(object):
             var_subst_map=None, vectorization_info=None,
             is_generating_device_code=None,
             gen_program_name=None,
-            schedule_index_end=None,
-            insn_was_not_vectorizable=False):
+            schedule_index_end=None):
 
         if kernel is None:
             kernel = self.kernel
@@ -238,6 +237,7 @@ class CodeGenerationState(object):
         if vectorization_info is None:
             vectorization_info = self.vectorization_info
 
+        insn_was_not_vectorizable = self.insn_was_not_vectorizable
         if vectorization_info is False:
             insn_was_not_vectorizable = True
             vectorization_info = None

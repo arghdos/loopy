@@ -235,12 +235,12 @@ class CodeGenerationState(object):
         if implemented_data_info is None:
             implemented_data_info = self.implemented_data_info
 
+        if vectorization_info is None:
+            vectorization_info = self.vectorization_info
+
         if vectorization_info is False:
             insn_was_not_vectorizable = True
             vectorization_info = None
-
-        if vectorization_info is None:
-            vectorization_info = self.vectorization_info
 
         if is_generating_device_code is None:
             is_generating_device_code = self.is_generating_device_code

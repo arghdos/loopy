@@ -14,8 +14,9 @@ knl = lp.make_kernel(
         "out[i] = 2*a[i]")
 
 knl = lp.set_options(knl, write_code=True)
+knl = lp.set_parameters(knl, n=n)
 knl = lp.split_iname(knl, "i", 4, slabs=(0, 1), inner_tag="vec")
 knl = lp.split_array_axis(knl, "a,out", axis_nr=0, count=4)
 knl = lp.tag_array_axes(knl, "a,out", "C,vec")
 
-knl(queue, a=a.reshape(-1, 4), n=n)
+knl(queue, a=a.reshape(-1, 4))

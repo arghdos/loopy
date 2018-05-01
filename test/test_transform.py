@@ -260,6 +260,9 @@ def test_vectorize(ctx_factory):
             split_kwargs=dict(slabs=(0, 1)))
 
     knl = lp.tag_data_axes(knl, "a,b", "c,vec")
+    # note: in order to eliminate a vector iname from the (implicit) conditional on
+    # the size of the i-loop, we must fix `n` before generating the kernel
+    knl = lp.fix_parameters(knl, n=30)
     ref_knl = knl
     ref_knl = lp.tag_inames(ref_knl, {"i_inner": "unr"})
 
@@ -270,8 +273,7 @@ def test_vectorize(ctx_factory):
     code, inf = lp.generate_code(knl)
 
     lp.auto_test_vs_ref(
-            ref_knl, ctx, knl,
-            parameters=dict(n=30))
+            ref_knl, ctx, knl)
 
 
 def test_extract_subst(ctx_factory):

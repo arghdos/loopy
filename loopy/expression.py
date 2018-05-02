@@ -63,6 +63,30 @@ class VectorizabilityChecker(RecursiveMapper):
     .. attribute:: vec_iname
     """
 
+    # this is a simple list of math functions from OpenCL-1.2
+    # https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/mathFunctions.html
+    # this could be expanded / moved to it's own target specific VecCheck if
+    # necessary
+    functions = """acos    acosh   acospi  asin
+    asinh   asinpi  atan    atan2
+    atanh   atanpi  atan2pi cbrt
+    ceil    copysign    cos cosh
+    cospi   erfc    erf exp
+    exp2    exp10   expm1   fabs
+    fdim    floor   fma fmax
+    fmin    fmod    fract   frexp
+    hypot   ilogb   ldexp   lgamma
+    lgamma_r    log log2    log10
+    log1p   logb    mad maxmag
+    minmag  modf    nan nextafter
+    pow pown    powr    remainder
+    remquo  rint    rootn   round
+    rsqrt   sin sincos  sinh
+    sinpi   sqrt    tan tanh
+    tanpi   tgamma  trunc"""
+
+    functions = [x.strip() for x in functions.split() if x.strip()]
+
     def __init__(self, kernel, vec_iname, vec_iname_length):
         self.kernel = kernel
         self.vec_iname = vec_iname
@@ -90,32 +114,10 @@ class VectorizabilityChecker(RecursiveMapper):
     def map_call(self, expr):
         # FIXME: Should implement better vectorization check for function calls
 
-        # https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/mathFunctions.html
-        # this is a simple list of math functions from OpenCL-1.2
-        functions = """acos    acosh   acospi  asin
-        asinh   asinpi  atan    atan2
-        atanh   atanpi  atan2pi cbrt
-        ceil    copysign    cos cosh
-        cospi   erfc    erf exp
-        exp2    exp10   expm1   fabs
-        fdim    floor   fma fmax
-        fmin    fmod    fract   frexp
-        hypot   ilogb   ldexp   lgamma
-        lgamma_r    log log2    log10
-        log1p   logb    mad maxmag
-        minmag  modf    nan nextafter
-        pow pown    powr    remainder
-        remquo  rint    rootn   round
-        rsqrt   sin sincos  sinh
-        sinpi   sqrt    tan tanh
-        tanpi   tgamma  trunc"""
-
-        functions = [x.strip() for x in functions.split() if x.strip()]
-
         rec_pars = [
                 self.rec(child) for child in expr.parameters]
         if any(rec_pars):
-            if expr.name not in functions:
+            if str(expr.function) not in VectorizabilityChecker.functions:
                 return Unvectorizable(
                     'Function {} is not known to be vectorizable'.format(expr.name))
             return True
@@ -259,7 +261,7 @@ class VectorizabilityChecker(RecursiveMapper):
         # 6.3.h in OpenCL-1.2 docs
         return any(self.rec(x) for x in expr.children)
 
-    map_logical_or = map_logical_not
+    map_logical_or = map_logical_and
 
     # sec 6.3.f in OpenCL-1.2 docs
     map_bitwise_not = map_logical_not

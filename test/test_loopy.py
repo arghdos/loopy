@@ -2979,7 +2979,7 @@ def test_explicit_simd_selects(ctx_factory):
     ctx = ctx_factory()
 
     def create_and_test(insn, condition, answer, exception=None, a=None, b=None,
-                        c=None):
+                        extra_insns=None):
         a = np.zeros((3, 4), dtype=np.int32) if a is None else a
         data = [lp.GlobalArg('a', shape=(12,), dtype=a.dtype)]
         kwargs = dict(a=a)
@@ -2988,17 +2988,17 @@ def test_explicit_simd_selects(ctx_factory):
             kwargs['b'] = b
         names = [d.name for d in data]
 
-        if c is not None:
-            data += [lp.ValueArg('c', dtype=c.dtype)]
-            kwargs['c'] = c
-
         knl = lp.make_kernel(['{[i]: 0 <= i < 12}'],
             """
-            if %(condition)s
-                %(insn)s
+            for i
+                %(extra)s
+                if %(condition)s
+                    %(insn)s
+                end
             end
             """ % dict(condition=condition,
-                       insn=insn),
+                       insn=insn,
+                       extra=extra_insns if extra_insns else ''),
             data
             )
 
@@ -3020,10 +3020,73 @@ def test_explicit_simd_selects(ctx_factory):
     # 1) test a conditional on a vector iname -- currently unimplemented as it
     # would require creating a 'shadow' vector iname temporary
     create_and_test('a[i] = 1', 'i > 6', ans, exception=LoopyError)
-    # 2) condition on a vector variable -- unimplemented as the i_inner in the
-    # condition currently isn't resolved
+    # 2) condition on a vector variable
     create_and_test('a[i] = 1', 'b[i] > 6', ans, b=np.arange(
         12, dtype=np.int32).reshape((3, 4)))
+    # 3) condition on a vector temporary
+    create_and_test('a[i] = 1', '1', ans, extra_insns='<> c = i < 6')
+
+
+def test_vectorizability():
+    # check new vectorizability conditions
+    from loopy.kernel.array import VectorArrayDimTag
+    from loopy.kernel.data import VectorizeTag
+
+    def create_and_test(insn, exception=None, a=None, b=None):
+        a = np.zeros((3, 4), dtype=np.int32) if a is None else a
+        data = [lp.GlobalArg('a', shape=(12,), dtype=a.dtype)]
+        kwargs = dict(a=a)
+        if b is not None:
+            data += [lp.GlobalArg('b', shape=(12,), dtype=b.dtype)]
+            kwargs['b'] = b
+        names = [d.name for d in data]
+
+        knl = lp.make_kernel(['{[i]: 0 <= i < 12}'],
+            """
+            for i
+                %(insn)s
+            end
+            """ % dict(insn=insn),
+            data
+            )
+
+        knl = lp.split_iname(knl, 'i', 4, inner_tag='vec')
+        knl = lp.split_array_axis(knl, names, 0, 4)
+        knl = lp.tag_array_axes(knl, names, 'N0,vec')
+        knl = lp.preprocess_kernel(knl)
+        lp.generate_code_v2(knl).device_code()
+        assert knl.instructions[0].within_inames & set(['i_inner'])
+        assert isinstance(knl.args[0].dim_tags[-1], VectorArrayDimTag)
+        assert isinstance(knl.args[0].dim_tags[-1], VectorArrayDimTag)
+        assert isinstance(knl.iname_to_tag['i_inner'], VectorizeTag)
+
+    def run(op_list=[], unary_operators=[], func_list=[], unary_funcs=[]):
+        for op in op_list:
+            template = 'a[i] = a[i] %(op)s %(rval)s' \
+                if op not in unary_operators else 'a[i] = %(op)s a[i]'
+
+            create_and_test(template % dict(op=op, rval='1'))
+            create_and_test(template % dict(op=op, rval='a[i]'))
+        for func in func_list:
+            template = 'a[i] = %(func)s(a[i], %(rval)s)' \
+                if func not in unary_funcs else 'a[i] = %(func)s(a[i])'
+            create_and_test(template % dict(func=func, rval='1'))
+            create_and_test(template % dict(func=func, rval='a[i]'))
+
+    # 1) comparisons
+    run(['>', '>=', '<', '<=', '==', '!='])
+
+    # 2) logical operators
+    run(['and', 'or', 'not'], ['not'])
+
+    # 3) bitwize operators
+    # bitwize and '&' is broken in parsing currently (#139)
+    # bitwize xor '^' not not implemented in codegen
+    run(['~', '|'], ['~'])
+
+    # 4) functions -- a random selection of the enabled math functions in opencl
+    run(func_list=['acos', 'exp10', 'atan2', 'round'],
+        unary_funcs=['round', 'acos', 'exp10'])
 
 
 def test_check_for_variable_access_ordering():

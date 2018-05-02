@@ -249,7 +249,7 @@ class VectorizabilityChecker(RecursiveMapper):
         # (see: sec 6.3.d-6.d.3 in OpenCL-1.2 docs)
 
         if expr.operator in ["<", "<=", ">", ">=", "!=", "=="]:
-            return any(self.rec(x) for x in [expr.left, expr.right])
+            return any([self.rec(x) for x in [expr.left, expr.right]])
 
         raise Unvectorizable()
 

@@ -268,11 +268,25 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
 
         if codegen_state.vectorization_info is not None:
             from loopy.symbolic import get_dependencies
+            from loopy.kernel.array import VectorArrayDimTag
+
             vec_iname = codegen_state.vectorization_info.iname
 
+            # precalculate vector arrays / temporaries
+            knl = codegen_state.kernel
+            vec_arys = set([x.name for x in knl.args + list(
+                knl.temporary_variables.values()) if any(
+                    isinstance(dt, VectorArrayDimTag)
+                    for dt in x.dim_tags)])
+
             def check_vec_dep(condition):
+                deps = get_dependencies(condition)
                 # check conditions for explicit vector iname dependecies
-                return len(get_dependencies(condition) & set([vec_iname]))
+                if len(deps & set([vec_iname])):
+                    return True
+                # check for vector temporaries / arrays in conditional
+                if len(deps & vec_arys):
+                    return True
 
             if any(check_vec_dep(cond) for cond in condition_exprs):
                 # condition directly involves a vector array or iname

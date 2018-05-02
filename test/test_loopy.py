@@ -3020,11 +3020,17 @@ def test_explicit_simd_selects(ctx_factory):
     # 1) test a conditional on a vector iname -- currently unimplemented as it
     # would require creating a 'shadow' vector iname temporary
     create_and_test('a[i] = 1', 'i > 6', ans, exception=LoopyError)
-    # 2) condition on a vector variable
+    # 2) condition on a vector array
     create_and_test('a[i] = 1', 'b[i] > 6', ans, b=np.arange(
         12, dtype=np.int32).reshape((3, 4)))
-    # 3) condition on a vector temporary
-    create_and_test('a[i] = 1', '1', ans, extra_insns='<> c = i < 6')
+    # 3) condition on a vector temporary -- this is currently broken for the
+    # same reason as #1
+    create_and_test('a[i] = 1', 'c', ans, extra_insns='<> c = i < 6',
+                    exception=LoopyError)
+    # 4) condition on an assigned vector array, this should work as assignment to a
+    # vector can be safely unrolled
+    create_and_test('a[i] = 1', 'b[i] > 6', ans, b=np.zeros((3, 4), dtype=np.int32),
+                    extra_insns='b[i] = i')
 
 
 def test_vectorizability():

@@ -90,10 +90,35 @@ class VectorizabilityChecker(RecursiveMapper):
     def map_call(self, expr):
         # FIXME: Should implement better vectorization check for function calls
 
+        # https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/mathFunctions.html
+        # this is a simple list of math functions from OpenCL-1.2
+        functions = """acos    acosh   acospi  asin
+        asinh   asinpi  atan    atan2
+        atanh   atanpi  atan2pi cbrt
+        ceil    copysign    cos cosh
+        cospi   erfc    erf exp
+        exp2    exp10   expm1   fabs
+        fdim    floor   fma fmax
+        fmin    fmod    fract   frexp
+        hypot   ilogb   ldexp   lgamma
+        lgamma_r    log log2    log10
+        log1p   logb    mad maxmag
+        minmag  modf    nan nextafter
+        pow pown    powr    remainder
+        remquo  rint    rootn   round
+        rsqrt   sin sincos  sinh
+        sinpi   sqrt    tan tanh
+        tanpi   tgamma  trunc"""
+
+        functions = [x.strip() for x in functions.split() if x.strip()]
+
         rec_pars = [
                 self.rec(child) for child in expr.parameters]
         if any(rec_pars):
-            raise Unvectorizable("fucntion calls cannot yet be vectorized")
+            if expr.name not in functions:
+                return Unvectorizable(
+                    'Function {} is not known to be vectorizable'.format(expr.name))
+            return True
 
         return False
 
@@ -216,16 +241,31 @@ class VectorizabilityChecker(RecursiveMapper):
         return False
 
     def map_comparison(self, expr):
-        # FIXME: These actually can be vectorized:
         # https://www.khronos.org/registry/cl/sdk/1.0/docs/man/xhtml/relationalFunctions.html
+
+        # even better for OpenCL <, <=, >, >=, !=, == are all vectorizable by default
+        # (see: sec 6.3.d-6.d.3 in OpenCL-1.2 docs)
+
+        if expr.operator in ["<", "<=", ">", ">=", "!=", "=="]:
+            return any(self.rec(x) for x in [expr.left, expr.right])
 
         raise Unvectorizable()
 
     def map_logical_not(self, expr):
-        raise Unvectorizable()
+        # 6.3.h in OpenCL-1.2 docs
+        return self.rec(expr.child)
 
-    map_logical_and = map_logical_not
+    def map_logical_and(self, expr):
+        # 6.3.h in OpenCL-1.2 docs
+        return any(self.rec(x) for x in expr.children)
+
     map_logical_or = map_logical_not
+
+    # sec 6.3.f in OpenCL-1.2 docs
+    map_bitwise_not = map_logical_not
+    map_bitwise_or = map_logical_and
+    map_bitwise_xor = map_logical_and
+    map_bitwise_and = map_logical_and
 
     def map_reduction(self, expr):
         # FIXME: Do this more carefully

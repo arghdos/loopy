@@ -3085,10 +3085,9 @@ def test_vectorizability():
     # 2) logical operators
     run(['and', 'or', 'not'], ['not'])
 
-    # 3) bitwize operators
-    # bitwize and '&' is broken in parsing currently (#139)
-    # bitwize xor '^' not not implemented in codegen
-    run(['~', '|'], ['~'])
+    # 3) bitwise operators
+    # bitwise xor '^' not not implemented in codegen
+    run(['~', '|', '&'], ['~'])
 
     # 4) functions -- a random selection of the enabled math functions in opencl
     run(func_list=['acos', 'exp10', 'atan2', 'round'],

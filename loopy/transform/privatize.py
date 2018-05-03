@@ -123,7 +123,7 @@ def privatize_temporaries_with_inames(
 
     def find_privitzing_inames(writer_insn, iname, temp_var):
         # test that -- a) the iname is an ILP or vector tag
-        if filter_iname_tags_by_type(kernel.iname_to_tag[iname],
+        if filter_iname_tags_by_type(kernel.iname_to_tags[iname],
                                      (IlpBaseTag, VectorizeTag)):
             # check for user specified type
             if temp_var.force_scalar:
@@ -268,9 +268,10 @@ def privatize_temporaries_with_inames(
 
             # the only O.K. case here is that the user specified that the instruction
             # should be a vector, and all the missing iname tags are vectors.
-            if not getattr(insn, 'force_vector', False) and all(isinstance(
-                kernel.iname_to_tag.get(iname), VectorizeTag) for x in
-                    eiii.seen_ilp_inames - insn.within_inames):
+            if not getattr(insn, 'force_vector', False) and all(
+                    filter_iname_tags_by_type(kernel.iname_to_tags[iname],
+                                              VectorizeTag)
+                    for x in eiii.seen_ilp_inames - insn.within_inames):
                 raise LoopyError(
                     "Kernel '%s': Instruction '%s': touched variable that "
                     "(for privatization, e.g. as performed for ILP) "

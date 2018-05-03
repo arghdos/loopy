@@ -123,7 +123,8 @@ def privatize_temporaries_with_inames(
 
     def find_privitzing_inames(writer_insn, iname, temp_var):
         # test that -- a) the iname is an ILP or vector tag
-        if isinstance(kernel.iname_to_tag.get(iname), (IlpBaseTag, VectorizeTag)):
+        if filter_iname_tags_by_type(kernel.iname_to_tag[iname],
+                                     (IlpBaseTag, VectorizeTag)):
             # check for user specified type
             if temp_var.force_scalar:
                 if iname in writer_insn.read_dependency_names():

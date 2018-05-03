@@ -144,7 +144,7 @@ class VectorizabilityChecker(RecursiveMapper):
 
         # determine allowed symbols as non-vector inames
         from pymbolic.primitives import Variable
-        allowed_symbols = dict((sym, Variable(sym)) for sym in kernel.iname_to_tag
+        allowed_symbols = dict((sym, Variable(sym)) for sym in kernel.all_inames()
                                if sym != vec_iname)
         from loopy.kernel.instruction import Assignment
         from loopy.tools import is_integer
@@ -197,7 +197,7 @@ class VectorizabilityChecker(RecursiveMapper):
             # or, if not vector index, and vector iname is present
             elif self.vec_iname in set(x.name for x in deps):
                 # check whether we can simplify out the vector iname
-                context = dict((x, x) for x in deps if x.name != self.vec_iname)
+                context = dict((str(x), x) for x in deps if x.name != self.vec_iname)
                 allowed_symbols = self.compile_time_constants(
                     self.kernel, self.vec_iname)
 

@@ -3036,7 +3036,7 @@ def test_explicit_simd_selects(ctx_factory):
 def test_vectorizability():
     # check new vectorizability conditions
     from loopy.kernel.array import VectorArrayDimTag
-    from loopy.kernel.data import VectorizeTag
+    from loopy.kernel.data import VectorizeTag, filter_iname_tags_by_type
 
     def create_and_test(insn, exception=None, a=None, b=None):
         a = np.zeros((3, 4), dtype=np.int32) if a is None else a
@@ -3064,7 +3064,7 @@ def test_vectorizability():
         assert knl.instructions[0].within_inames & set(['i_inner'])
         assert isinstance(knl.args[0].dim_tags[-1], VectorArrayDimTag)
         assert isinstance(knl.args[0].dim_tags[-1], VectorArrayDimTag)
-        assert isinstance(knl.iname_to_tag['i_inner'], VectorizeTag)
+        assert filter_iname_tags_by_type(knl.iname_to_tags['i_inner'], VectorizeTag)
 
     def run(op_list=[], unary_operators=[], func_list=[], unary_funcs=[]):
         for op in op_list:

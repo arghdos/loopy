@@ -101,11 +101,10 @@ def privatize_temporaries_with_inames(
         end
 
     facilitating loop interchange of the *imatrix* loop.
-
     .. versionadded:: 2018.1
     """
 
-    from loopy.kernel.data import VectorizeTag, IlpBaseTag
+    from loopy.kernel.data import VectorizeTag, IlpBaseTag, filter_iname_tags_by_type
     from loopy.kernel.tools import find_recursive_dependencies
 
     if isinstance(privatizing_inames, str):
@@ -243,7 +242,7 @@ def privatize_temporaries_with_inames(
 
         dim_tags = ["c"] * (len(shape) + len(extra_shape))
         for i, iname in enumerate(inames):
-            if isinstance(kernel.iname_to_tag.get(iname), VectorizeTag):
+            if filter_iname_tags_by_type(kernel.iname_to_tags[iname], VectorizeTag):
                 dim_tags[len(shape) + i] = "vec"
 
         new_temp_vars[tv.name] = tv.copy(shape=shape + extra_shape,

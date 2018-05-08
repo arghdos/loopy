@@ -296,8 +296,8 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
                     from loopy.diagnostic import LoopyError
                     deps = set()
                     try:
-                        for condition in condition.expr.children:
-                            deps |= get_dependencies(condition)
+                        for c in condition.expr.children:
+                            deps |= get_dependencies(c)
 
                         if deps & set([vec_iname]):
                             # we'd have to insert our own mirror temporary of the

@@ -572,14 +572,35 @@ class OpenCLCASTBuilder(CASTBuilder):
         Emit's a vector select function
         """
 
-        try:
-            from cgen import Assign
-            return Assign(str(ast.lvalue.expr), str(VectorSelect(
-                ast.rvalue.expr, ast.lvalue.expr, condition_str)))
-        except AttributeError:
-            raise LoopyError("Vector conditionals can only be generated for simple "
-                             "assign statements, condition (%s) on instruction (%s) "
-                             "invalid" % (str(condition_str), str(ast)))
+        def vecify(assign):
+            try:
+                # treat it as an assignment
+                return Assign(str(assign.lvalue.expr), str(VectorSelect(
+                    assign.rvalue.expr, assign.lvalue.expr, condition_str)))
+            except AttributeError:
+                return False
+
+        from cgen import Assign, Block
+        vec_if = vecify(ast)
+        if not vec_if:
+            try:
+                vec_if = []
+                for assign in ast.contents:
+                    vec_if.append(vecify(assign))
+                if any(not x for x in vec_if):
+                    # one 'assign' failed
+                    vec_if = False
+                else:
+                    vec_if = Block(vec_if)
+            except AttributeError:
+                vec_if = False
+        if not vec_if:
+            raise LoopyError(
+                "Vector conditionals can only be generated for simple "
+                "assign statements, condition (%s) on instruction (%s) "
+                "invalid" % (str(condition_str), str(ast)))
+
+        return vec_if
 
     def add_vector_access(self, access_expr, index):
         # The 'int' avoids an 'L' suffix for long ints.

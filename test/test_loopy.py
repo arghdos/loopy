@@ -2979,13 +2979,16 @@ def test_explicit_simd_selects(ctx_factory):
     ctx = ctx_factory()
 
     def create_and_test(insn, condition, answer, exception=None, a=None, b=None,
-                        extra_insns=None):
+                        extra_insns=None, c=None):
         a = np.zeros((3, 4), dtype=np.int32) if a is None else a
         data = [lp.GlobalArg('a', shape=(12,), dtype=a.dtype)]
         kwargs = dict(a=a)
         if b is not None:
             data += [lp.GlobalArg('b', shape=(12,), dtype=b.dtype)]
             kwargs['b'] = b
+        if c is not None:
+            data += [lp.GlobalArg('c', shape=(12,), dtype=b.dtype)]
+            kwargs['c'] = c
         names = [d.name for d in data]
 
         knl = lp.make_kernel(['{[i]: 0 <= i < 12}'],
@@ -3011,8 +3014,11 @@ def test_explicit_simd_selects(ctx_factory):
             with pytest.raises(exception):
                 knl(queue, **kwargs)
         else:
-            result = knl(queue, **kwargs)[1][0]
-            assert np.array_equal(result.flatten('C'), answer)
+            if not isinstance(answer, tuple):
+                answer = (answer,)
+            result = knl(queue, **kwargs)[1]
+            for r, a in zip(result, answer):
+                assert np.array_equal(r.flatten('C'), a)
 
     ans = np.zeros(12, dtype=np.int32)
     ans[7:] = 1
@@ -3031,6 +3037,12 @@ def test_explicit_simd_selects(ctx_factory):
     # vector can be safely unrolled
     create_and_test('a[i] = 1', 'b[i] > 6', ans, b=np.zeros((3, 4), dtype=np.int32),
                     extra_insns='b[i] = i')
+    # 5) a block of simple assignments, this should be seemlessly translated to
+    # multiple vector if statements
+    c_ans = np.ones(12, dtype=np.int32)
+    c_ans[7:] = 0
+    create_and_test('a[i] = 1\nc[i] = 0', 'b[i] > 6', (ans, c_ans), b=np.arange(
+        12, dtype=np.int32).reshape((3, 4)), c=np.ones((3, 4), dtype=np.int32))
 
 
 def test_vectorizability():

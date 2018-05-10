@@ -24,7 +24,7 @@ THE SOFTWARE.
 
 import six
 
-from loopy.diagnostic import LoopyError, warn
+from loopy.diagnostic import LoopyError, warn_with_kernel
 from pytools import ImmutableRecord
 import islpy as isl
 
@@ -333,7 +333,7 @@ class CodeGenerationState(object):
         try:
             return func(self)
         except Unvectorizable as e:
-            warn(self.kernel, "vectorize_failed",
+            warn_with_kernel(self.kernel, "vectorize_failed",
                     "Vectorization of '%s' failed because '%s'"
                     % (what, e))
 

@@ -3049,6 +3049,33 @@ def test_explicit_simd_selects(ctx_factory):
         12, dtype=np.int32).reshape((3, 4)))
 
 
+@pytest.mark.parametrize(('lhs_dtype', 'rhs_dtype'), [
+    (np.int32, np.int64),
+    (np.float32, np.float64)])
+def test_explicit_vector_dtype_conversion(ctx_factory, lhs_dtype, rhs_dtype):
+    ctx = ctx_factory()
+
+    # test that dtype conversion happens correctly between differing vector-dtypes
+
+    vw = 4
+    a_lp = lp.GlobalArg('a', shape=(12,), dtype=rhs_dtype)
+    temp_lp = lp.TemporaryVariable('temp', dtype=lhs_dtype)
+
+    knl = lp.make_kernel(['{[i]: 0 <= i < 12}'],
+            """
+            for i
+                temp = a[i]
+            end
+            """,
+            [a_lp, temp_lp])
+    knl = lp.split_iname(knl, 'i', vw, inner_tag='vec')
+    knl = lp.split_array_axis(knl, 'a', 0, 4)
+    knl = lp.tag_array_axes(knl, 'a', 'N0,vec')
+
+    queue = cl.CommandQueue(ctx)
+    knl(queue, a=np.zeros((12,), dtype=rhs_dtype).reshape((3, 4)))
+
+
 def test_vectorizability():
     # check new vectorizability conditions
     from loopy.kernel.array import VectorArrayDimTag

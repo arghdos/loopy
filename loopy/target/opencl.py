@@ -341,6 +341,18 @@ class ExpressionToOpenCLCExpressionMapper(ExpressionToCExpressionMapper):
         return super(ExpressionToOpenCLCExpressionMapper, self).map_comparison(
             expr, type_context)
 
+    def wrap_in_typecast(self, actual_type, needed_dtype, s):
+        wrap = super(ExpressionToOpenCLCExpressionMapper, self).wrap_in_typecast(
+            actual_type, needed_dtype, s)
+        if self.codegen_state.vectorization_info is not None and (
+                actual_type != needed_dtype):
+            ctype = self.kernel.target.get_dtype_registry().dtype_to_ctype(
+                needed_dtype)
+            vw = self.codegen_state.vectorization_info.length
+            # need to add an explicit conversion
+            return var("convert_%s%d(%s)" % (ctype, vw, wrap))
+        return wrap
+
 # }}}
 
 

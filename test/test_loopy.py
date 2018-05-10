@@ -3056,7 +3056,7 @@ def test_explicit_simd_selects(ctx_factory):
     create_and_test('a[i] = 1', 'not (b[i] > 6)', ans_negated, b=np.arange(
         12, dtype=np.float64).reshape((3, 4)))
     create_and_test('a[i] = 1', 'not (b[i] > 6)', ans_negated, b=np.arange(
-        12, dtype=np.int64).reshape((3, 4)), a=np.zeros((3, 4), dtype=np.int32))
+        12, dtype=np.int64).reshape((3, 4)), a=np.zeros((3, 4), dtype=np.float32))
 
 
 @pytest.mark.parametrize(('lhs_dtype', 'rhs_dtype'), [

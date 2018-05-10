@@ -313,10 +313,19 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
                     except (AttributeError, TypeError):
                         pass
 
-                    # get LHS dtype for (potential) casting
+                    # get LHS dtype for (potential) casting of condition
                     from loopy.expression import dtype_to_type_context
                     lhs_dtype = codegen_state.expression_to_code_mapper.infer_type(
                         ast.lvalue.expr)
+                    if not lhs_dtype.is_integral():
+                        # the necessary dtype is the integer version of the floating
+                        # point type (e.g., float64 -> int64)
+                        from loopy.types import to_loopy_type
+                        import numpy as np
+                        lhs_dtype = to_loopy_type(
+                            np.dtype('i%d' % lhs_dtype.itemsize),
+                            lhs_dtype.target)
+
                     type_context = dtype_to_type_context(codegen_state.kernel.target,
                         lhs_dtype)
                     return condition_mapper(

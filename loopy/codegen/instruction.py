@@ -64,7 +64,7 @@ def to_codegen_result(
         from pymbolic.primitives import LogicalAnd
         from pymbolic.mapper.stringifier import PREC_NONE
         ast = codegen_state.ast_builder.emit_if(
-                codegen_state.expression_to_code_mapper(
+                lambda: codegen_state.expression_to_code_mapper(
                     LogicalAnd(tuple(condition_exprs)), PREC_NONE),
                 ast)
 

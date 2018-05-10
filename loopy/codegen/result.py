@@ -261,9 +261,10 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
         cur_ast = inner.current_ast(codegen_state)
         method = codegen_state.ast_builder.emit_if
 
-        def condition_mapper():
+        def condition_mapper(ast=None, type_context=None, needed_dtype=None):
             return codegen_state.expression_to_code_mapper(
-                    LogicalAnd(tuple(condition_exprs)), PREC_NONE)
+                    LogicalAnd(tuple(condition_exprs)), PREC_NONE,
+                    type_context=type_context, needed_dtype=needed_dtype)
         mapper = condition_mapper
 
         if codegen_state.vectorization_info is not None:
@@ -291,12 +292,17 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
             if any(check_vec_dep(cond) for cond in condition_exprs):
                 # condition directly involves a vector array or iname
 
-                def condition_mapper_wrapper():
-                    condition = condition_mapper()
+                def condition_mapper_wrapper(ast=None):
+                    if ast is None:
+                        # default case for printing
+                        return condition_mapper()
+
+                    # get the default condition to check for vectorizability
+                    check = condition_mapper()
                     from loopy.diagnostic import LoopyError
                     deps = set()
                     try:
-                        for c in condition.expr.children:
+                        for c in check.expr.children:
                             deps |= get_dependencies(c)
 
                         if deps & set([vec_iname]):
@@ -307,14 +313,21 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
                     except (AttributeError, TypeError):
                         pass
 
-                    return condition
+                    # get LHS dtype for (potential) casting
+                    from loopy.expression import dtype_to_type_context
+                    lhs_dtype = codegen_state.expression_to_code_mapper.infer_type(
+                        ast.lvalue.expr)
+                    type_context = dtype_to_type_context(codegen_state.kernel.target,
+                        lhs_dtype)
+                    return condition_mapper(
+                        type_context=type_context, needed_dtype=lhs_dtype)
 
                 method = codegen_state.ast_builder.emit_vector_if
                 mapper = condition_mapper_wrapper
 
         return inner.with_new_ast(
                 codegen_state,
-                method(mapper(), cur_ast))
+                method(mapper, cur_ast))
 
     return inner
 

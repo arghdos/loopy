@@ -287,9 +287,9 @@ class PythonASTBuilderBase(ASTBuilderBase):
     def can_implement_conditionals(self):
         return True
 
-    def emit_if(self, condition_str, ast):
+    def emit_if(self, condition_mapper, ast):
         from genpy import If
-        return If(condition_str, ast)
+        return If(condition_mapper(), ast)
 
     def emit_assignment(self, codegen_state, insn):
         ecm = codegen_state.expression_to_code_mapper

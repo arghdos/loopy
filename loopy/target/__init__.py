@@ -217,10 +217,10 @@ class ASTBuilderBase(object):
     def can_implement_conditionals(self):
         return False
 
-    def emit_if(self, condition_str, ast):
+    def emit_if(self, condition_mapper, ast):
         raise NotImplementedError()
 
-    def emit_vector_if(self, condition_str, ast):
+    def emit_vector_if(self, condition_mapper, ast):
         raise NotImplementedError()
 
     def emit_initializer(self, codegen_state, dtype, name, val_str, is_const):

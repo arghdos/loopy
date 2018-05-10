@@ -355,7 +355,7 @@ class ExpressionToOpenCLCExpressionMapper(ExpressionToCExpressionMapper):
                 needed_dtype)
             vw = self.codegen_state.vectorization_info.length
             # need to add an explicit conversion
-            return var("convert_%s%d(%s)" % (ctype, vw, wrap))
+            return var("convert_%s%d" % (ctype, vw))(wrap)
         return wrap
 
 # }}}
@@ -584,7 +584,7 @@ class OpenCLCASTBuilder(CASTBuilder):
             pass
         return assignment
 
-    def emit_vector_if(self, condition_str, ast):
+    def emit_vector_if(self, condition_mapper, ast):
         """
         Emit's a vector select function
         """
@@ -593,7 +593,8 @@ class OpenCLCASTBuilder(CASTBuilder):
             try:
                 # treat it as an assignment
                 return Assign(str(assign.lvalue.expr), str(VectorSelect(
-                    assign.rvalue.expr, assign.lvalue.expr, condition_str)))
+                    assign.rvalue.expr, assign.lvalue.expr,
+                    condition_mapper(assign))))
             except AttributeError:
                 return False
 
@@ -615,7 +616,7 @@ class OpenCLCASTBuilder(CASTBuilder):
             raise LoopyError(
                 "Vector conditionals can only be generated for simple "
                 "assign statements, condition (%s) on instruction (%s) "
-                "invalid" % (str(condition_str), str(ast)))
+                "invalid" % (str(condition_mapper()), str(ast)))
 
         return vec_if
 

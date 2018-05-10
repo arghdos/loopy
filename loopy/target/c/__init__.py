@@ -957,9 +957,9 @@ class CASTBuilder(ASTBuilderBase):
     def can_implement_conditionals(self):
         return True
 
-    def emit_if(self, condition_str, ast):
+    def emit_if(self, condition_mapper, ast):
         from cgen import If
-        return If(condition_str, ast)
+        return If(condition_mapper(), ast)
 
     # }}}
 

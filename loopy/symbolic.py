@@ -291,6 +291,9 @@ class DependencyMapper(DependencyMapperBase):
     def map_type_cast(self, expr):
         return self.rec(expr.child)
 
+    def map_literal(self, expr):
+        return set()
+
 
 class SubstitutionRuleExpander(IdentityMapper):
     def __init__(self, rules):

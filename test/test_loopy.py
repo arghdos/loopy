@@ -3047,6 +3047,10 @@ def test_explicit_simd_selects(ctx_factory):
     ans_negated = np.invert(ans) + 2
     create_and_test('a[i] = 1', 'not (b[i] > 6)', ans_negated, b=np.arange(
         12, dtype=np.int32).reshape((3, 4)))
+    # 7) test conditional on differing dtype
+    ans_negated = np.invert(ans) + 2
+    create_and_test('a[i] = 1', 'not (b[i] > 6)', ans_negated, b=np.arange(
+        12, dtype=np.int64).reshape((3, 4)))
 
 
 @pytest.mark.parametrize(('lhs_dtype', 'rhs_dtype'), [

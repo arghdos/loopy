@@ -282,6 +282,10 @@ class CTarget(TargetBase):
     def get_kernel_executor(self, knl, *args, **kwargs):
         raise NotImplementedError()
 
+    @property
+    def has_math_header(self):
+        return True
+
     # }}}
 
 
@@ -426,7 +430,8 @@ def _preamble_generator(preamble_info):
                 ( (a) - ( ((a)<0) ? ((b)-1) : 0 )  ) / (b) \
                 )
             """)
-    if len(c_funcs & c_math_functions):
+    if len(c_funcs & c_math_functions) and (
+            preamble_info.kernel.target.has_math_header):
         yield ('00_cmath', "#include <math.h>")
 
 # }}}

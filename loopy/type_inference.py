@@ -349,14 +349,26 @@ class TypeInferenceMapper(CombineMapper):
         dtype = field[0]
         return [NumpyType(dtype)]
 
-    def map_comparison(self, expr):
+    def map_comparison_types(self, dtype):
         # "bool" is unusable because OpenCL's bool has indeterminate memory
         # format.
-        return [NumpyType(np.dtype(np.int32))]
 
-    map_logical_not = map_comparison
-    map_logical_and = map_comparison
-    map_logical_or = map_comparison
+        if dtype[0].itemsize == 8:
+            return [NumpyType(np.dtype(np.int64))]
+        else:
+            return [NumpyType(np.dtype(np.int32))]
+
+    def map_logical_not(self, expr):
+        return self.map_comparison_types(self.rec(expr.child))
+
+    def map_logical_and(self, expr):
+        return self.map_comparison_types(
+            self.combine([self.rec(x) for x in expr.children]))
+    map_logical_or = map_logical_and
+
+    def map_comparison(self, expr):
+        return self.map_comparison_types(
+            self.combine([self.rec(expr.left), self.rec(expr.right)]))
 
     def map_group_hw_index(self, expr, *args):
         return [self.kernel.index_dtype]

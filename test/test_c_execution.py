@@ -352,7 +352,7 @@ def test_include_c_math_header():
             a[i] = fabs(b[i])
         """,
         [lp.GlobalArg('a', shape=(n,), dtype=np.int32),
-         lp.GlobalArg('b', shape=(n,), dtype=np.int32),],
+         lp.GlobalArg('b', shape=(n,), dtype=np.int32)],
         target=ExecutableCTarget())
 
     knl = lp.fix_parameters(knl, n=n)

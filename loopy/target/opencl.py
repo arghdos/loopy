@@ -346,6 +346,11 @@ class ExpressionToOpenCLCExpressionMapper(ExpressionToCExpressionMapper):
             actual_type, needed_dtype, s)
         if self.codegen_state.vectorization_info is not None and (
                 actual_type != needed_dtype):
+            from loopy.symbolic import Literal
+            if isinstance(s, Literal):
+                # if its a literal, no need for explicit conversion
+                return wrap
+
             ctype = self.kernel.target.get_dtype_registry().dtype_to_ctype(
                 needed_dtype)
             vw = self.codegen_state.vectorization_info.length

@@ -75,29 +75,6 @@ class DTypeRegistryWrapper(object):
 # }}}
 
 
-# {{{ preamble generator
-
-def _preamble_generator(preamble_info):
-    c_funcs = set(func.c_name for func in preamble_info.seen_functions)
-    if "int_floor_div" in c_funcs:
-        yield ("05_int_floor_div", """
-            #define int_floor_div(a,b) \
-              (( (a) - \
-                 ( ( (a)<0 ) != ( (b)<0 )) \
-                  *( (b) + ( (b)<0 ) - ( (b)>=0 ) )) \
-               / (b) )
-            """)
-
-    if "int_floor_div_pos_b" in c_funcs:
-        yield ("05_int_floor_div_pos_b", """
-            #define int_floor_div_pos_b(a,b) ( \
-                ( (a) - ( ((a)<0) ? ((b)-1) : 0 )  ) / (b) \
-                )
-            """)
-
-# }}}
-
-
 # {{{ cgen overrides
 
 from cgen import Declarator
@@ -356,6 +333,13 @@ def c_symbol_mangler(kernel, name):
 
 # {{{ function mangler
 
+c_math_unitary_functions = ["fabs", "acos", "asin", "atan", "cos", "cosh", "sin",
+                            "sinh", "tanh", "exp", "log", "log10", "sqrt", "ceil",
+                            "floor"]
+c_math_binary_functions = ["fmax", "fmin"]
+c_math_functions = set(c_math_unitary_functions + c_math_binary_functions)
+
+
 def c_math_mangler(target, name, arg_dtypes, modify_name=True):
     # Function mangler for math functions defined in C standard
     # Convert abs, min, max to fabs, fmin, fmax.
@@ -369,8 +353,7 @@ def c_math_mangler(target, name, arg_dtypes, modify_name=True):
         name = "f" + name
 
     # unitary functions
-    if (name in ["fabs", "acos", "asin", "atan", "cos", "cosh", "sin", "sinh",
-                 "tanh", "exp", "log", "log10", "sqrt", "ceil", "floor"]
+    if (name in c_math_unitary_functions
             and len(arg_dtypes) == 1
             and arg_dtypes[0].numpy_dtype.kind == "f"):
 
@@ -392,7 +375,7 @@ def c_math_mangler(target, name, arg_dtypes, modify_name=True):
                 arg_dtypes=arg_dtypes)
 
     # binary functions
-    if (name in ["fmax", "fmin"]
+    if (name in c_math_binary_functions
             and len(arg_dtypes) == 2):
 
         dtype = np.find_common_type(
@@ -420,6 +403,31 @@ def c_math_mangler(target, name, arg_dtypes, modify_name=True):
                     arg_dtypes=2*(result_dtype,))
 
     return None
+
+# }}}
+
+
+# {{{ preamble generator
+
+def _preamble_generator(preamble_info):
+    c_funcs = set(func.c_name for func in preamble_info.seen_functions)
+    if "int_floor_div" in c_funcs:
+        yield ("05_int_floor_div", """
+            #define int_floor_div(a,b) \
+              (( (a) - \
+                 ( ( (a)<0 ) != ( (b)<0 )) \
+                  *( (b) + ( (b)<0 ) - ( (b)>=0 ) )) \
+               / (b) )
+            """)
+
+    if "int_floor_div_pos_b" in c_funcs:
+        yield ("05_int_floor_div_pos_b", """
+            #define int_floor_div_pos_b(a,b) ( \
+                ( (a) - ( ((a)<0) ? ((b)-1) : 0 )  ) / (b) \
+                )
+            """)
+    if len(c_funcs & c_math_functions):
+        yield ('00_cmath', "#include <math.h>")
 
 # }}}
 

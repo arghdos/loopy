@@ -343,6 +343,24 @@ def test_missing_compilers():
         __test(eval_tester, ExecutableCTarget, compiler=ccomp)
 
 
+def test_include_c_math_header():
+    from loopy.target.c import ExecutableCTarget
+    n = 10
+
+    knl = lp.make_kernel('{[i]: 0 <= i < n}',
+        """
+            a[i] = fabs(b[i])
+        """,
+        [lp.GlobalArg('a', shape=(n,), dtype=np.int32),
+         lp.GlobalArg('b', shape=(n,), dtype=np.int32),],
+        target=ExecutableCTarget())
+
+    knl = lp.fix_parameters(knl, n=n)
+    assert ('#include <math.h>') in lp.generate_code_v2(knl).device_code()
+    assert np.allclose(knl(a=np.zeros(10, dtype=np.int32),
+                           b=-np.arange(10, dtype=np.int32))[1], np.arange(10))
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         exec(sys.argv[1])

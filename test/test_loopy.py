@@ -2888,7 +2888,8 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
         <:v> tv3 = 1
         """)
 
-    def make_kernel(insn, ans=None, preamble=None, extra_inames=None):
+    def make_kernel(insn, ans=None, preamble=None, extra_inames=None, skeleton=None,
+                    dtype=None):
         skeleton = """
         %(preamble)s
         for j
@@ -2899,16 +2900,18 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
                 end
             end
         end
-        """
+        """ if skeleton is None else skeleton
+        dtype = dtype if dtype is not None else (
+            ans.dtype if ans is not None else np.int32)
         inames = ['i, j']
         if extra_inames is not None:
             inames += list(extra_inames)
         knl = lp.make_kernel(
             '{[%(inames)s]: 0 <= %(inames)s < 12}' % {'inames': ', '.join(inames)},
             skeleton % dict(insn=insn, preamble='' if not preamble else preamble),
-            [lp.GlobalArg('a', shape=(12, 12)),
+            [lp.GlobalArg('a', shape=(12, 12), dtype=dtype),
              lp.TemporaryVariable('mask', shape=(12,), initializer=np.array(
-                                  np.arange(12) >= 6, dtype=np.int), read_only=True,
+                                  np.arange(12) >= 6, dtype=dtype), read_only=True,
                                   scope=scopes.GLOBAL)])
 
         knl = lp.split_iname(knl, 'j', 4, inner_tag='vec')
@@ -2917,7 +2920,7 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
         knl = lp.preprocess_kernel(knl)
 
         if ans is not None:
-            assert np.array_equal(knl(queue, a=np.zeros((12, 3, 4), dtype=np.int32))[
+            assert np.array_equal(knl(queue, a=np.zeros((12, 3, 4), dtype=dtype))[
                 1][0], ans)
 
         return knl
@@ -2973,6 +2976,35 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
         raise
     finally:
         warnings.resetwarnings()
+
+    # modified case from pyjac
+    skeleton = """
+    for j
+        %(preamble)s
+        for i
+            %(insn)s
+            if i > 6
+                <> P_val = 100 {id=pset0, nosync=pset1}
+            else
+                P_val = 0.01 {id=pset1, nosync=pset0}
+            end
+            <> B_sum = 0 {id=bset0}
+            for k
+                B_sum = B_sum + k * a[i, j] {id=bset1, dep=*:bset0}
+            end
+            # here, we are testing that Kc is properly promoted to a vector dtype
+            <> P_sum = P_val * i {id=pset2, dep=pset0:pset1}
+            B_sum = exp(B_sum) {id=bset2, dep=bset0:bset1}
+            <> Kc = P_sum * B_sum {id=kset, dep=bset*:pset2}
+            a[i, j] = Kc {dep=*:kset, nosync=pset0:pset1}
+        end
+    end
+    """
+
+    knl = make_kernel('', dtype=np.float32, skeleton=skeleton, extra_inames='k')
+    from loopy.kernel.array import VectorArrayDimTag
+    assert any(isinstance(x, VectorArrayDimTag)
+               for x in knl.temporary_variables['Kc'].dim_tags)
 
 
 def test_explicit_simd_selects(ctx_factory):

@@ -120,6 +120,7 @@ def privatize_temporaries_with_inames(
     wmap = kernel.writer_map()
 
     var_to_new_priv_axis_iname = {}
+    tv_wmap = {}
 
     def find_privitzing_inames(writer_insn, iname, temp_var):
         # test that -- a) the iname is an ILP or vector tag
@@ -153,6 +154,7 @@ def privatize_temporaries_with_inames(
                 continue
             writer_insn = kernel.id_to_insn[writer_insn_id]
             inner_ids = set([writer_insn_id])
+
             # the instructions we have to consider here are those that directly
             # write to this variable, and those that are recursive dependencies of
             # this instruction
@@ -170,13 +172,29 @@ def privatize_temporaries_with_inames(
                 insn = kernel.id_to_insn[insn_id]
                 test_inames = kernel.insn_inames(insn) & privatizing_inames
 
+                # while we're here, we also build a temporary variable write map
+                # the reason being that a temporary variable that's only assigned to
+                # from other vector temporaries will never have a direct-dependency
+                # on the privitizing iname
+
+                # if we build this, we can recursively travel down the
+                # temporary variable write-map of any newly privitized variable
+                # and add the privitizing iname to any temporary variable it assigns
+                # to
+                for tv_read in insn.read_dependency_names():
+                    if tv_read in kernel.temporary_variables:
+                        if tv_read not in tv_wmap:
+                            tv_wmap[tv_read] = set()
+
+                        tv_wmap[tv_read].add(tv.name)
+
                 priv_axis_inames = set()
                 for ti in test_inames:
                     priv_axis_inames |= find_privitzing_inames(insn, ti, tv)
 
                 priv_axis_inames = frozenset(priv_axis_inames)
                 referenced_priv_axis_inames = (priv_axis_inames
-                    & writer_insn.write_dependency_names())
+                    & insn.write_dependency_names())
 
                 new_priv_axis_inames = priv_axis_inames - referenced_priv_axis_inames
 
@@ -207,6 +225,27 @@ def privatize_temporaries_with_inames(
                     continue
 
                 var_to_new_priv_axis_iname[tv.name] = set(new_priv_axis_inames)
+
+    # }}}
+
+    # {{{ recursively apply vector temporary write heuristic
+
+    applied = set()
+
+    def apply(varname, starting_dict):
+        if varname not in tv_wmap or varname in applied:
+            return starting_dict
+        applied.add(varname)
+        for written_to in tv_wmap[varname]:
+            if written_to not in starting_dict:
+                starting_dict[written_to] = set()
+            starting_dict[written_to] |= starting_dict[varname]
+            starting_dict.update(apply(written_to, starting_dict.copy()))
+        return starting_dict
+
+    for varname in list(var_to_new_priv_axis_iname.keys()):
+        var_to_new_priv_axis_iname.update(apply(
+            varname, var_to_new_priv_axis_iname.copy()))
 
     # }}}
 

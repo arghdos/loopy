@@ -312,7 +312,7 @@ def privatize_temporaries_with_inames(
             if not getattr(insn, 'force_vector', False) and all(
                     filter_iname_tags_by_type(kernel.iname_to_tags[iname],
                                               VectorizeTag)
-                    for x in eiii.seen_ilp_inames - insn.within_inames):
+                    for x in eiii.seen_priv_axis_inames - insn.within_inames):
                 raise LoopyError(
                     "Kernel '%s': Instruction '%s': touched variable that "
                     "(for privatization, e.g. as performed for ILP) "

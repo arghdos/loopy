@@ -119,7 +119,8 @@ class VectorizabilityChecker(RecursiveMapper):
         if any(rec_pars):
             if str(expr.function) not in VectorizabilityChecker.functions:
                 return Unvectorizable(
-                    'Function {} is not known to be vectorizable'.format(expr.name))
+                    'Function {} is not known to be vectorizable'.format(
+                        str(expr.function)))
             return True
 
         return False

@@ -2977,7 +2977,11 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
     finally:
         warnings.resetwarnings()
 
-    # modified case from pyjac
+    # modified case from pyjac -- what makes this case special is that
+    # Kc is never directly assigned to in an instruction that directly references
+    # the vector iname, j_inner.  Instead, it is a good test of the recursive
+    # vector temporary promotion, as it is written to by B_sum, which _is_ directly
+    # written to from an instruction (bset1) that references j_inner
     skeleton = """
     for j
         %(preamble)s

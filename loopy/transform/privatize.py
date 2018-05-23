@@ -243,7 +243,7 @@ def privatize_temporaries_with_inames(
             starting_dict.update(apply(written_to, starting_dict.copy()))
         return starting_dict
 
-    for varname, inames in list(var_to_new_priv_axis_iname.keys()):
+    for varname in list(var_to_new_priv_axis_iname.keys()):
         if any(filter_iname_tags_by_type(kernel.iname_to_tags[iname], VectorizeTag)
                for iname in var_to_new_priv_axis_iname[varname]):
             var_to_new_priv_axis_iname.update(apply(

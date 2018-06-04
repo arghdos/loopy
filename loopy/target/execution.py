@@ -150,14 +150,14 @@ class ExecutionWrapperGeneratorBase(object):
         # returning the desired integer argument.
         iarg_to_sources = {}
 
-        from loopy.kernel.data import GlobalArg
+        from loopy.kernel.data import GlobalArg, LocalArg
         from loopy.symbolic import DependencyMapper, StringifyMapper
         from loopy.diagnostic import ParameterFinderWarning
         dep_map = DependencyMapper()
 
         from pymbolic import var
         for arg in implemented_data_info:
-            if arg.arg_class is GlobalArg:
+            if arg.arg_class in [GlobalArg, LocalArg]:
                 sym_shape = var(arg.name).attr("shape")
                 for axis_nr, shape_i in enumerate(arg.shape):
                     if shape_i is None:

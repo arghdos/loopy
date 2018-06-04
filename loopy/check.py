@@ -466,7 +466,7 @@ def _check_variable_access_ordered_inner(kernel):
     wmap = kernel.writer_map()
     rmap = kernel.reader_map()
 
-    from loopy.kernel.data import GlobalArg, ValueArg, temp_var_scope
+    from loopy.kernel.data import GlobalArg, LocalArg, ValueArg, temp_var_scope
     from loopy.kernel.tools import find_aliasing_equivalence_classes
 
     depfind = IndirectDependencyEdgeFinder(kernel)
@@ -494,6 +494,8 @@ def _check_variable_access_ordered_inner(kernel):
             arg = kernel.arg_dict[name]
             if isinstance(arg, GlobalArg):
                 scope = temp_var_scope.GLOBAL
+            elif isinstance(arg, LocalArg):
+                scope = temp_var_scope.LOCAL
             elif isinstance(arg, ValueArg):
                 scope = temp_var_scope.PRIVATE
             else:

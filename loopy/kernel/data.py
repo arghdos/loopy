@@ -272,6 +272,7 @@ class GlobalArg(ArrayBase, KernelArgument):
         return ast_builder.get_global_arg_decl(self.name + name_suffix, shape,
                 dtype, is_written)
 
+
 class LocalArg(ArrayBase, KernelArgument):
     __doc__ = ArrayBase.__doc__
     min_target_axes = 0

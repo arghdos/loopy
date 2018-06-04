@@ -338,7 +338,7 @@ class DifferentiationContext(object):
             arg_class = lp.LocalArg if isinstance(
                 self.kernel.arg_dict[var_name], lp.LocalArg) else lp.GlobalArg
             self.new_args.append(
-               arg_class(
+                arg_class(
                     new_var_name,
                     arg.dtype,
                     shape=shape,

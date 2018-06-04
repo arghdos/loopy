@@ -2871,11 +2871,10 @@ def test_half_complex_conditional(ctx_factory):
 
 def test_local_args(ctx_factory):
     ctx = ctx_factory()
-    from loopy.kernel.instruction import BarrierInstruction
 
     # simple example, allow the user to pass in a workspace local array
     knl = lp.make_kernel(
-            "{[i,i0]: 0 <= i,i0 < 10}",
+           "{[i,i0]: 0 <= i,i0 < 10}",
            """
                 tmp[i] = i {id=init, dep=*}
                 ... lbarrier {id=barrier, mem_kind=local, dep=init}
@@ -2893,8 +2892,8 @@ def test_local_args(ctx_factory):
     # try with 2 local args for compatibility
     knl = lp.make_kernel(
             "{[i,i0]: 0 <= i,i0 < 10}",
-           """
-           for i
+            """
+            for i
                 tmp[i] = i {id=init, dep=*}
                 tmp2[i] = i + 1 {id=init2, dep=*}
             end
@@ -2902,10 +2901,10 @@ def test_local_args(ctx_factory):
             for i0
                 out[i0] = tmp[tmp2[i0] % 10] {id=set, dep=barrier}
             end
-           """,
-           [lp.LocalArg('tmp', shape=(10,), dtype=np.int32),
-            lp.LocalArg('tmp2', shape=(10,), dtype=np.int32),
-            lp.GlobalArg('out', shape=(10,), dtype=np.int32)]
+            """,
+            [lp.LocalArg('tmp', shape=(10,), dtype=np.int32),
+             lp.LocalArg('tmp2', shape=(10,), dtype=np.int32),
+             lp.GlobalArg('out', shape=(10,), dtype=np.int32)]
            )
 
     # get vectorized form

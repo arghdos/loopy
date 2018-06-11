@@ -270,13 +270,15 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
         if codegen_state.vectorization_info is not None:
             from loopy.symbolic import get_dependencies
             from loopy.kernel.array import VectorArrayDimTag
+            from loopy.kernel.data import ValueArg
 
             vec_iname = codegen_state.vectorization_info.iname
 
             # precalculate vector arrays / temporaries
             knl = codegen_state.kernel
             vec_arys = set([x.name for x in knl.args + list(
-                knl.temporary_variables.values()) if any(
+                knl.temporary_variables.values())
+                    if not isinstance(x, ValueArg) and any(
                     isinstance(dt, VectorArrayDimTag)
                     for dt in x.dim_tags)])
 

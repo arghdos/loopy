@@ -3015,7 +3015,7 @@ def test_explicit_simd_selects(ctx_factory):
     ctx = ctx_factory()
 
     def create_and_test(insn, condition, answer, exception=None, a=None, b=None,
-                        extra_insns=None, c=None, v=None):
+                        extra_insns=None, c=None, v=None, check=None):
         a = np.zeros((3, 4), dtype=np.int32) if a is None else a
         data = [lp.GlobalArg('a', shape=(12,), dtype=a.dtype)]
         kwargs = dict(a=a)
@@ -3025,10 +3025,11 @@ def test_explicit_simd_selects(ctx_factory):
         if c is not None:
             data += [lp.GlobalArg('c', shape=(12,), dtype=b.dtype)]
             kwargs['c'] = c
-        if v is not None:
-            data += [lp.ValueArg('v', dtype=v.dtype)]
-            kwargs['v'] = v
         names = [d.name for d in data]
+        # add after defining names to avoid trying to split value arg
+        if v is not None:
+            data += [lp.ValueArg('v', dtype=np.int32)]
+            kwargs['v'] = v
 
         knl = lp.make_kernel(['{[i]: 0 <= i < 12}'],
             """
@@ -3047,9 +3048,13 @@ def test_explicit_simd_selects(ctx_factory):
         knl = lp.split_iname(knl, 'i', 4, inner_tag='vec')
         knl = lp.split_array_axis(knl, names, 0, 4)
         knl = lp.tag_array_axes(knl, names, 'N0,vec')
+        if v is not None:
+            knl = lp.set_options(knl, write_wrapper=True)
 
         queue = cl.CommandQueue(ctx)
-        if exception is not None:
+        if check is not None:
+            assert check(knl)
+        elif exception is not None:
             with pytest.raises(exception):
                 knl(queue, **kwargs)
         else:
@@ -3096,8 +3101,9 @@ def test_explicit_simd_selects(ctx_factory):
         12, dtype=np.float64).reshape((3, 4)))
     create_and_test('a[i] = 1', 'not (b[i] > 6)', ans_negated, b=np.arange(
         12, dtype=np.int64).reshape((3, 4)), a=np.zeros((3, 4), dtype=np.float32))
-    # 9) test conditional on valuearg
-    create_and_test('a[i] = 1', 'not v', np.zeros_like(a), v=1)
+    # 9) test conditional on valuearg, the "test" here is that we can actually
+    # generate the code
+    create_and_test('a[i] = 1', 'v', np.ones_like(ans), v=1)
 
 
 @pytest.mark.parametrize(('lhs_dtype', 'rhs_dtype'), [

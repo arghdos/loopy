@@ -811,8 +811,9 @@ class OpenCLCASTBuilder(CASTBuilder):
                 if isinstance(lhs_var, GlobalArg):
                     var_kind = "__global"
                 elif (
-                        isinstance(lhs_var, (TemporaryVariable, LocalArg))
-                        and lhs_var.scope == temp_var_scope.LOCAL):
+                        (isinstance(lhs_var, (TemporaryVariable))
+                        and lhs_var.scope == temp_var_scope.LOCAL) or
+                        isinstance(lhs_var,  LocalArg)):
                     var_kind = "__local"
                 elif (
                         isinstance(lhs_var, TemporaryVariable)

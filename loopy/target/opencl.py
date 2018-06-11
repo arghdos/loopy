@@ -416,6 +416,10 @@ class OpenCLTarget(CTarget):
                 vec.types[base.numpy_dtype, count],
                 target=self)
 
+    @property
+    def has_math_header(self):
+        return False
+
     # }}}
 
 # }}}

@@ -203,6 +203,10 @@ class ISPCTarget(CTarget):
                 include_bool=True)
         return result
 
+    @property
+    def has_math_header(self):
+        return False
+
     # }}}
 
 

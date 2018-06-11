@@ -334,6 +334,10 @@ class CUDACASTBuilder(CASTBuilder):
 
         return arg_decl
 
+    def get_local_arg_decl(self, name, shape, dtype, is_written):
+        from cgen.cuda import CudaShared
+        return CudaShared(self.get_global_arg_decl(name, shape, dtype, is_written))
+
     def get_image_arg_decl(self, name, shape, num_target_axes, dtype, is_written):
         raise NotImplementedError("not yet: texture arguments in CUDA")
 

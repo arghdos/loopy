@@ -63,8 +63,14 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
     # {{{ handle non-numpy args
 
     def handle_non_numpy_arg(self, gen, arg):
+        from loopy.kernel.data import LocalArg
+        is_local = arg.arg_class == LocalArg
         gen("if isinstance(%s, _lpy_np.ndarray):" % arg.name)
         with Indentation(gen):
+            if is_local:
+                gen("raise Exception('Cannot pass numpy data directly to a "
+                    "__local argument.')")
+
             gen("# synchronous, nothing to worry about")
             gen("%s = _lpy_cl_array.to_device("
                     "queue, %s, allocator=allocator)"
@@ -72,7 +78,19 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
             gen("_lpy_encountered_numpy = True")
         gen("elif %s is not None:" % arg.name)
         with Indentation(gen):
-            gen("_lpy_encountered_dev = True")
+            if is_local:
+                gen("assert isinstance(%s, _lpy_cl.LocalMemory), 'Arguments of "
+                    "type LocalArg must either be None or an instance of a "
+                    "pyopencl.LocalMemory object.'" % arg.name)
+            else:
+                gen("_lpy_encountered_dev = True")
+        if is_local:
+            from numpy import prod
+            gen('else:')
+            with Indentation(gen):
+                gen('# create a properly sized LocalMemory object')
+                gen('%s = _lpy_cl.LocalMemory(%d)' % (
+                    arg.name, prod(arg.shape) * arg.dtype.itemsize))
 
         gen("")
 

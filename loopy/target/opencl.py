@@ -698,6 +698,13 @@ class OpenCLCASTBuilder(CASTBuilder):
         return CLGlobal(super(OpenCLCASTBuilder, self).get_global_arg_decl(
             name, shape, dtype, is_written))
 
+    def get_local_arg_decl(self, name, shape, dtype, is_written):
+        from cgen.opencl import CLLocal
+
+        # can simply use a "global" c decl
+        return CLLocal(super(OpenCLCASTBuilder, self).get_global_arg_decl(
+            name, shape, dtype, is_written))
+
     def get_image_arg_decl(self, name, shape, num_target_axes, dtype, is_written):
         if is_written:
             mode = "w"
@@ -796,11 +803,11 @@ class OpenCLCASTBuilder(CASTBuilder):
                 else:
                     assert False
 
-                from loopy.kernel.data import TemporaryVariable, GlobalArg
+                from loopy.kernel.data import TemporaryVariable, GlobalArg, LocalArg
                 if isinstance(lhs_var, GlobalArg):
                     var_kind = "__global"
                 elif (
-                        isinstance(lhs_var, TemporaryVariable)
+                        isinstance(lhs_var, (TemporaryVariable, LocalArg))
                         and lhs_var.scope == temp_var_scope.LOCAL):
                     var_kind = "__local"
                 elif (

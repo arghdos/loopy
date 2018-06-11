@@ -200,6 +200,9 @@ class ASTBuilderBase(object):
     def get_global_arg_decl(self, name, shape, dtype, is_written):
         raise NotImplementedError()
 
+    def get_local_arg_decl(self, name, shape, dtype, is_written):
+        raise NotImplementedError()
+
     def get_image_arg_decl(self, name, shape, num_target_axes, dtype, is_written):
         raise NotImplementedError()
 

@@ -335,8 +335,10 @@ class DifferentiationContext(object):
         dim_tags = ("c",) * len(shape)
 
         if var_name in self.kernel.arg_dict:
+            arg_class = lp.LocalArg if isinstance(
+                self.kernel.arg_dict[var_name], lp.LocalArg) else lp.GlobalArg
             self.new_args.append(
-                lp.GlobalArg(
+                arg_class(
                     new_var_name,
                     arg.dtype,
                     shape=shape,

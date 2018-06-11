@@ -44,7 +44,7 @@ from loopy.kernel.instruction import (
 from loopy.kernel.data import (
         auto,
         KernelArgument,
-        ValueArg, GlobalArg, ConstantArg, ImageArg,
+        ValueArg, GlobalArg, LocalArg, ConstantArg, ImageArg,
         temp_var_scope, TemporaryVariable,
         SubstitutionRule,
         CallMangleInfo)
@@ -162,7 +162,7 @@ __all__ = [
         "BarrierInstruction",
 
         "KernelArgument",
-        "ValueArg", "GlobalArg", "ConstantArg", "ImageArg",
+        "ValueArg", "GlobalArg", "LocalArg", "ConstantArg", "ImageArg",
         "temp_var_scope", "TemporaryVariable",
         "SubstitutionRule",
         "CallMangleInfo",

@@ -3015,7 +3015,7 @@ def test_explicit_simd_selects(ctx_factory):
     ctx = ctx_factory()
 
     def create_and_test(insn, condition, answer, exception=None, a=None, b=None,
-                        extra_insns=None, c=None):
+                        extra_insns=None, c=None, v=None):
         a = np.zeros((3, 4), dtype=np.int32) if a is None else a
         data = [lp.GlobalArg('a', shape=(12,), dtype=a.dtype)]
         kwargs = dict(a=a)
@@ -3025,6 +3025,9 @@ def test_explicit_simd_selects(ctx_factory):
         if c is not None:
             data += [lp.GlobalArg('c', shape=(12,), dtype=b.dtype)]
             kwargs['c'] = c
+        if v is not None:
+            data += [lp.ValueArg('v', dtype=v.dtype)]
+            kwargs['v'] = v
         names = [d.name for d in data]
 
         knl = lp.make_kernel(['{[i]: 0 <= i < 12}'],
@@ -3087,12 +3090,14 @@ def test_explicit_simd_selects(ctx_factory):
     ans_negated = np.invert(ans) + 2
     create_and_test('a[i] = 1', 'not (b[i] > 6)', ans_negated, b=np.arange(
         12, dtype=np.int64).reshape((3, 4)))
-    # 7) test conditional on differing dtype (float->int) and (int->float)
+    # 8) test conditional on differing dtype (float->int) and (int->float)
     ans_negated = np.invert(ans) + 2
     create_and_test('a[i] = 1', 'not (b[i] > 6)', ans_negated, b=np.arange(
         12, dtype=np.float64).reshape((3, 4)))
     create_and_test('a[i] = 1', 'not (b[i] > 6)', ans_negated, b=np.arange(
         12, dtype=np.int64).reshape((3, 4)), a=np.zeros((3, 4), dtype=np.float32))
+    # 9) test conditional on valuearg
+    create_and_test('a[i] = 1', 'not v', np.zeros_like(a), v=1)
 
 
 @pytest.mark.parametrize(('lhs_dtype', 'rhs_dtype'), [

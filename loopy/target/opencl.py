@@ -329,9 +329,12 @@ class ExpressionToOpenCLCExpressionMapper(ExpressionToCExpressionMapper):
     def map_comparison(self, expr, type_context):
         from loopy.symbolic import get_dependencies
         from loopy.kernel.data import VectorizeTag, filter_iname_tags_by_type
-        vec_inames = set([x for x in self.kernel.all_inames()
-                          if filter_iname_tags_by_type(
-                            self.kernel.iname_to_tags[x], VectorizeTag)])
+        from six import iteritems
+
+        vec_inames = set([iname for iname, tags in
+                          iteritems(self.kernel.iname_to_tags)
+                          if filter_iname_tags_by_type(tags, VectorizeTag)])
+
         if get_dependencies(expr) & vec_inames and \
                 self.codegen_state.insn_was_not_vectorizable:
             raise LoopyError("Cannot unroll a vector-iname comparison, as scalar"

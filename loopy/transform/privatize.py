@@ -284,7 +284,7 @@ def privatize_temporaries_with_inames(
 
         dim_tags = ["c"] * (len(shape) + len(extra_shape))
         for i, iname in enumerate(inames):
-            if filter_iname_tags_by_type(kernel.iname_to_tags[iname], VectorizeTag):
+            if kernel.iname_tags_of_type(iname, VectorizeTag):
                 dim_tags[len(shape) + i] = "vec"
 
         new_temp_vars[tv.name] = tv.copy(shape=shape + extra_shape,

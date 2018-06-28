@@ -445,6 +445,11 @@ def project_out(set, inames):
 
 
 def obj_involves_variable(obj, var_name):
+    if isinstance(obj, isl.Constraint):
+        # use simple get dependencies check?
+        from loopy.symbolic import aff_to_expr, get_dependencies
+        return len(get_dependencies(aff_to_expr(obj.get_aff())) & set(var_name))
+
     loc = obj.get_var_dict().get(var_name)
     if loc is not None:
         if not obj.get_coefficient_val(*loc).is_zero():

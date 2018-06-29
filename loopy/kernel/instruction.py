@@ -785,33 +785,11 @@ class Assignment(MultiAssignmentBase):
                 EVALUATE ztemp_new = f(ztemp_old) + a
             WHILE compare_and_swap(z[i], ztemp_new, ztemp_old) did not succeed
 
-    .. attribute:: force_scalar
-
-        If True, temporary variable created from the assignee will be a scalar
-        variable, regardless of the vector status of this assignment.
-
-        .. note::
-
-            This is useful for OpenCL code-generation, to allow for if-statements
-            that do not depend on a vector temporary (which causes compilation
-            failures).
-
-    .. attribute:: force_vector
-
-        If True, temporary variable created from the assignee will be a vector
-        variable, regardless of the vector status of this assignment.
-
-        .. note::
-
-            This is useful for OpenCL code-generation, to allow for if-statements
-            that do not depend on a vector temporary (which causes compilation
-            failures).
-
     .. automethod:: __init__
     """
 
     fields = MultiAssignmentBase.fields | \
-            set("assignee temp_var_type atomicity force_scalar force_vector".split())
+            set("assignee temp_var_type atomicity".split())
     pymbolic_fields = MultiAssignmentBase.pymbolic_fields | set(["assignee"])
 
     def __init__(self,
@@ -828,9 +806,7 @@ class Assignment(MultiAssignmentBase):
             temp_var_type=None, atomicity=(),
             priority=0, predicates=frozenset(),
             insn_deps=None, insn_deps_is_final=None,
-            forced_iname_deps=None, forced_iname_deps_is_final=None,
-            force_scalar=False,
-            force_vector=False):
+            forced_iname_deps=None, forced_iname_deps_is_final=None):
 
         super(Assignment, self).__init__(
                 id=id,
@@ -866,8 +842,6 @@ class Assignment(MultiAssignmentBase):
         self.expression = expression
         self.temp_var_type = temp_var_type
         self.atomicity = atomicity
-        self.force_scalar = force_scalar
-        self.force_vector = force_vector
 
     # {{{ implement InstructionBase interface
 
@@ -883,8 +857,7 @@ class Assignment(MultiAssignmentBase):
                 assignee=f(self.assignee, *args),
                 expression=f(self.expression, *args),
                 predicates=frozenset(
-                    f(pred, *args) for pred in self.predicates),
-                force_scalar=self.force_scalar)
+                    f(pred, *args) for pred in self.predicates))
 
     # }}}
 
@@ -1075,14 +1048,6 @@ def make_assignment(assignees, expression, temp_var_types=None, **kwargs):
         if not isinstance(expression, (Call, Reduction)):
             raise LoopyError("right-hand side in multiple assignment must be "
                     "function call or reduction, got: '%s'" % expression)
-
-        if kwargs.pop('force_scalar', False):
-            raise LoopyError("Force scalar option cannot be used with multiple "
-                             "assigments.")
-
-        if kwargs.pop('force_vector', False):
-            raise LoopyError("Force vector option cannot be used with multiple "
-                             "assigments.")
 
         return CallInstruction(
                 assignees=assignees,

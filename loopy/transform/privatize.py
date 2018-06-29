@@ -120,17 +120,6 @@ def privatize_temporaries_with_inames(
         # test that -- a) the iname is an ILP or vector tag
         if filter_iname_tags_by_type(kernel.iname_to_tags[iname],
                                      (IlpBaseTag, VectorizeTag)):
-            # check for user specified type
-            if temp_var.force_scalar:
-                if iname in writer_insn.read_dependency_names():
-                    raise LoopyError(
-                        "Cannot write to (user-specified) scalar variable '%s' "
-                        "using vec/ILP iname '%s' in instruction '%s'." % (
-                            temp_var.name, iname, writer_insn.id)
-                        )
-                return set()
-            elif temp_var.force_vector:
-                return set([iname])
             # and b) instruction depends on the ILP/vector iname
             return set([iname]) & writer_insn.dependency_names()
         return set()
@@ -177,8 +166,7 @@ def privatize_temporaries_with_inames(
 
             new_priv_axis_inames = priv_axis_inames - referenced_priv_axis_inames
 
-            if not new_priv_axis_inames and tv.force_scalar and \
-                    tv.name in var_to_new_priv_axis_iname:
+            if not new_priv_axis_inames and tv.name in var_to_new_priv_axis_iname:
                 # conflict
                 raise LoopyError("instruction '%s' requires var '%s' to be a "
                                  "scalar but previous instructions required "
@@ -227,7 +215,8 @@ def privatize_temporaries_with_inames(
             # update the dependency
             starting_dict[written_to] |= starting_dict[varname]
             # and recursively apply to the dependecy's dependencies
-            starting_dict.update(recursively_apply(written_to, starting_dict.copy()))
+            starting_dict.update(recursively_apply(
+                written_to, starting_dict.copy(), applied=applied))
 
         return starting_dict
 
@@ -294,21 +283,14 @@ def privatize_temporaries_with_inames(
         eiii = ExtraInameIndexInserter(var_to_extra_iname)
         new_insn = insn.with_transformed_expressions(eiii)
         if not eiii.seen_priv_axis_inames <= insn.within_inames:
-
-            # the only O.K. case here is that the user specified that the instruction
-            # should be a vector, and all the missing iname tags are vectors.
-            if not getattr(insn, 'force_vector', False) and all(
-                    filter_iname_tags_by_type(kernel.iname_to_tags[iname],
-                                              VectorizeTag)
-                    for x in eiii.seen_priv_axis_inames - insn.within_inames):
-                raise LoopyError(
-                    "Kernel '%s': Instruction '%s': touched variable that "
-                    "(for privatization, e.g. as performed for ILP) "
-                    "required iname(s) '%s', but that the instruction was not "
-                    "previously within the iname(s). To remedy this, first promote"
-                    "the instruction into the iname."
-                    % (kernel.name, insn.id, ", ".join(
-                        eiii.seen_priv_axis_inames - insn.within_inames)))
+            raise LoopyError(
+                "Kernel '%s': Instruction '%s': touched variable that "
+                "(for privatization, e.g. as performed for ILP) "
+                "required iname(s) '%s', but that the instruction was not "
+                "previously within the iname(s). To remedy this, first promote"
+                "the instruction into the iname."
+                % (kernel.name, insn.id, ", ".join(
+                    eiii.seen_priv_axis_inames - insn.within_inames)))
 
         new_insns.append(new_insn)
 

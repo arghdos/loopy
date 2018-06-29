@@ -26,7 +26,6 @@ import six
 
 import collections
 import numpy as np
-from pytools import memoize_method
 from pytools.persistent_dict import KeyBuilder as KeyBuilderBase
 from loopy.symbolic import WalkMapper as LoopyWalkMapper
 from pymbolic.mapper.persistent_hash import (

@@ -117,19 +117,46 @@ def privatize_temporaries_with_inames(
                 for s in only_var_names.split(","))
 
     def find_privitzing_inames(writer_insn, iname, temp_var):
-        # test that the iname is an ILP or vector tag
+        # There are now two flavors of privitzing iname promotion, one for ILP and
+        # another for vectorization
+
+        # Temporaries inside an ILP loop have have no additional requirements for
+        # promotion
+
+        # However, we should _not_ assume that this is the case for temporaries
+        # inside a vectorizing loop.  Instead, only temporaries written to by
+        # instructions that directly depend on the vector iname should be promoted.
+        # This is to avoid spurious promotions of constants (not-dependent on the
+        # vector iname) to vector dtypes, for example (w/ j_inner the vectorizing
+        # iname, and 'a' a data-array with a vector dtype on the second axis):
+        #
+        # ```
+        #   for j_outer
+        #       for j_inner
+        #           <> c = function()
+        #           a[c, j_inner] = 1
+        #       end
+        #   end
+        # ```
+        #
+        # is perfectly valid -- however, if c is promoted to a vector-dtype, we will
+        # hit issues with a (potentially) non-constant "vector" index being in a
+        # non-vector axis.  Hence, we must be cautions in vector promotions; those
+        # vector temporaries _not_ written to by a directly vector-iname dependent
+        # instruction will be promoted in the second stage (recursive application of
+        # the write map)
+
         if filter_iname_tags_by_type(kernel.iname_to_tags[iname], IlpBaseTag):
-            # ILP inames have no additional requirements for promotion
             return set([iname])
         if filter_iname_tags_by_type(kernel.iname_to_tags[iname], VectorizeTag):
             # For vector inames, we should only consider an iname if the
-            # instruction _directly_ depends on it (to avoid spurious vector
+            # instruction has a _direct_ dependency on it (to avoid spurious vector
             # promotions).  Missed promotions will be handled in the recursive
             # application step
             return set([iname]) & writer_insn.dependency_names()
         return set()
 
-    # {{{ find variables that need extra indices
+    # {{{ Stage 1: find variables that need extra indices
 
     from collections import defaultdict
     tv_wmap = defaultdict(lambda: set())
@@ -145,13 +172,7 @@ def privatize_temporaries_with_inames(
             writer_insn = kernel.id_to_insn[writer_insn_id]
             test_inames = kernel.insn_inames(writer_insn) & privatizing_inames
 
-            # A temporary variable that's only assigned to from other vector
-            # temporaries will never have a direct-dependency on the vector
-            # iname. After building a map of which temporary variables write to
-            # others, we can recursively travel down the temporary variable write-map
-            # of any newly vectorized temporary variable, and extend the
-            # vectorization to those temporary variables dependent on it.
-
+            # see stage 2
             for tv_read in writer_insn.read_dependency_names():
                 if tv_read in kernel.temporary_variables:
                     tv_wmap[tv_read].add(tv.name)
@@ -186,7 +207,17 @@ def privatize_temporaries_with_inames(
 
     # }}}
 
-    # {{{ recursively apply vector temporary write heuristic
+    # {{{ Stage 2: recursively apply vector temporary write heuristic
+
+    # A temporary variable that's only assigned to from other vector
+    # temporaries will never have a direct-dependency on the vector
+    # iname. After building a map of which temporary variables write to
+    # others, we can recursively travel down the temporary variable write-map
+    # of any newly vectorized temporary variable, and extend the
+    # vectorization to those temporary variables dependent on it.
+    #
+    # See ..func: `find_privitzing_inames` for reasoning about vector temporary
+    # promotion
 
     def recursively_apply(varname, starting_dict, applied=None):
         if applied is None:

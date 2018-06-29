@@ -105,7 +105,6 @@ def privatize_temporaries_with_inames(
     """
 
     from loopy.kernel.data import VectorizeTag, IlpBaseTag, filter_iname_tags_by_type
-    from loopy.kernel.tools import find_recursive_dependencies
 
     if isinstance(privatizing_inames, str):
         privatizing_inames = frozenset(
@@ -116,11 +115,6 @@ def privatize_temporaries_with_inames(
         only_var_names = frozenset(
                 s.strip()
                 for s in only_var_names.split(","))
-
-    wmap = kernel.writer_map()
-
-    var_to_new_priv_axis_iname = {}
-    tv_wmap = {}
 
     def find_privitzing_inames(writer_insn, iname, temp_var):
         # test that -- a) the iname is an ILP or vector tag
@@ -143,6 +137,11 @@ def privatize_temporaries_with_inames(
 
     # {{{ find variables that need extra indices
 
+    from collections import defaultdict
+    tv_wmap = defaultdict(lambda: set())
+    wmap = kernel.writer_map()
+    var_to_new_priv_axis_iname = {}
+
     for tv in six.itervalues(kernel.temporary_variables):
         # check variables to transform
         if only_var_names is not None and tv.name not in only_var_names:
@@ -153,100 +152,89 @@ def privatize_temporaries_with_inames(
             if writer_insn_id in seen:
                 continue
             writer_insn = kernel.id_to_insn[writer_insn_id]
-            inner_ids = set([writer_insn_id])
+            seen.add(writer_insn_id)
 
-            # the instructions we have to consider here are those that directly
-            # write to this variable, and those that are recursive dependencies of
-            # this instruction
-            rec_deps = find_recursive_dependencies(kernel, frozenset([
-                writer_insn_id]))
-            # however, we must make sure to limit to those inames that we are
-            # actually inside of
-            inner_ids |= set([
-                x for x in rec_deps if kernel.id_to_insn[x].within_inames <=
-                writer_insn.within_inames])
+            test_inames = kernel.insn_inames(writer_insn) & privatizing_inames
 
-            for insn_id in inner_ids:
-                seen.add(insn_id)
+            # A temporary variable that's only assigned to from other vector or ILP
+            # temporaries will never have a direct-dependency on the privitizing
+            # iname. After building a map of which temporary variables write to
+            # others, we can recursively travel down the temporary variable write-map
+            # of any newly privitized temporary variable, and extend the
+            # privitization to those temporary variables dependent on it.
 
-                insn = kernel.id_to_insn[insn_id]
-                test_inames = kernel.insn_inames(insn) & privatizing_inames
+            for tv_read in writer_insn.read_dependency_names():
+                if tv_read in kernel.temporary_variables:
+                    tv_wmap[tv_read].add(tv.name)
 
-                # while we're here, we also build a temporary variable write map
-                # the reason being that a temporary variable that's only assigned to
-                # from other vector temporaries will never have a direct-dependency
-                # on the privitizing iname
+            priv_axis_inames = set()
+            for ti in test_inames:
+                priv_axis_inames |= find_privitzing_inames(writer_insn, ti, tv)
 
-                # if we build this, we can recursively travel down the
-                # temporary variable write-map of any newly privitized variable
-                # and add the privitizing iname to any temporary variable it assigns
-                # to
-                for tv_read in insn.read_dependency_names():
-                    if tv_read in kernel.temporary_variables:
-                        if tv_read not in tv_wmap:
-                            tv_wmap[tv_read] = set()
+            priv_axis_inames = frozenset(priv_axis_inames)
+            referenced_priv_axis_inames = (priv_axis_inames
+                & writer_insn.write_dependency_names())
 
-                        tv_wmap[tv_read].add(tv.name)
+            new_priv_axis_inames = priv_axis_inames - referenced_priv_axis_inames
 
-                priv_axis_inames = set()
-                for ti in test_inames:
-                    priv_axis_inames |= find_privitzing_inames(insn, ti, tv)
+            if not new_priv_axis_inames and tv.force_scalar and \
+                    tv.name in var_to_new_priv_axis_iname:
+                # conflict
+                raise LoopyError("instruction '%s' requires var '%s' to be a "
+                                 "scalar but previous instructions required "
+                                 "vector/ILP inames '%s'" % (
+                                        writer_insn_id, tv.name, ", ".join(
+                                            var_to_new_priv_axis_iname[
+                                                tv.name])))
 
-                priv_axis_inames = frozenset(priv_axis_inames)
-                referenced_priv_axis_inames = (priv_axis_inames
-                    & writer_insn.write_dependency_names())
+            if not new_priv_axis_inames:
+                continue
 
-                new_priv_axis_inames = priv_axis_inames - referenced_priv_axis_inames
-
-                if not new_priv_axis_inames and tv.force_scalar and \
-                        tv.name in var_to_new_priv_axis_iname:
+            if tv.name in var_to_new_priv_axis_iname:
+                if new_priv_axis_inames != set(
+                        var_to_new_priv_axis_iname[tv.name]):
                     # conflict
-                    raise LoopyError("instruction '%s' requires var '%s' to be a "
-                                     "scalar but previous instructions required "
-                                     "vector/ILP inames '%s'" % (
-                                            insn_id, tv.name, ", ".join(
-                                                var_to_new_priv_axis_iname[
-                                                    tv.name])))
+                    raise LoopyError("instruction '%s' requires adding "
+                            "indices for vector/ILP inames '%s' on var '%s', "
+                            "but previous instructions required inames '%s'"
+                            % (writer_insn_id, ", ".join(new_priv_axis_inames),
+                                tv.name, ", ".join(
+                                    var_to_new_priv_axis_iname[tv.name])))
 
-                if not new_priv_axis_inames:
-                    continue
+                continue
 
-                if tv.name in var_to_new_priv_axis_iname:
-                    if new_priv_axis_inames != set(
-                            var_to_new_priv_axis_iname[tv.name]):
-                        # conflict
-                        raise LoopyError("instruction '%s' requires adding "
-                                "indices for vector/ILP inames '%s' on var '%s', "
-                                "but previous instructions required inames '%s'"
-                                % (insn_id, ", ".join(new_priv_axis_inames),
-                                    tv.name, ", ".join(
-                                        var_to_new_priv_axis_iname[tv.name])))
-
-                    continue
-
-                var_to_new_priv_axis_iname[tv.name] = set(new_priv_axis_inames)
+            var_to_new_priv_axis_iname[tv.name] = set(new_priv_axis_inames)
 
     # }}}
 
-    # {{{ recursively apply vector temporary write heuristic
+    # {{{ recursively apply vector / ILP temporary write heuristic
 
-    applied = set()
+    def recursively_apply(varname, starting_dict, applied=None):
+        if applied is None:
+            # root case, set up set of variables we've already applied to act as
+            # a base case and avoid infinite recursion.
+            applied = set()
 
-    def apply(varname, starting_dict):
         if varname not in tv_wmap or varname in applied:
+            # if no other variables depend on the starting variable, or the starting
+            # variable's privitizing inames have already been applied
             return starting_dict
+
         applied.add(varname)
         for written_to in tv_wmap[varname]:
             if written_to not in starting_dict:
                 starting_dict[written_to] = set()
+            # update the dependency
             starting_dict[written_to] |= starting_dict[varname]
-            starting_dict.update(apply(written_to, starting_dict.copy()))
+            # and recursively apply to the dependecy's dependencies
+            starting_dict.update(recursively_apply(written_to, starting_dict.copy()))
+
         return starting_dict
 
     for varname in list(var_to_new_priv_axis_iname.keys()):
         if any(filter_iname_tags_by_type(kernel.iname_to_tags[iname], VectorizeTag)
                for iname in var_to_new_priv_axis_iname[varname]):
-            var_to_new_priv_axis_iname.update(apply(
+            var_to_new_priv_axis_iname.update(recursively_apply(
                 varname, var_to_new_priv_axis_iname.copy()))
 
     # }}}

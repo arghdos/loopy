@@ -105,9 +105,6 @@ class IdentityMapperMixin(object):
 
     def map_type_annotation(self, expr, *args):
         kwargs = {}
-        if isinstance(expr, TypeAnnotation):
-            kwargs['force_scalar'] = expr.force_scalar
-            kwargs['force_vector'] = expr.force_vector
         return type(expr)(expr.type, self.rec(expr.child), **kwargs)
 
     map_type_cast = map_type_annotation
@@ -423,19 +420,13 @@ class TypeAnnotation(p.Expression):
     assignments that create temporaries.
     """
 
-    def __init__(self, type, child, force_scalar=False, force_vector=False):
+    def __init__(self, type, child):
         super(TypeAnnotation, self).__init__()
         self.type = type
         self.child = child
-        self.force_scalar = force_scalar
-        self.force_vector = force_vector
-
-        if (self.force_scalar and self.force_vector):
-            raise TypeError('A type annotation cannot simultaneously be forced to '
-                            'both scalar and vector types')
 
     def __getinitargs__(self):
-        return (self.type, self.child, self.force_scalar, self.force_vector)
+        return (self.type, self.child)
 
     def stringifier(self):
         return StringifyMapper
@@ -1141,46 +1132,22 @@ class LoopyParser(ParserBase):
             return float(val)  # generic float
 
     def parse_prefix(self, pstate):
-        from pymbolic.parser import _PREC_UNARY, _less, _greater, _identifier, _colon
+        from pymbolic.parser import _PREC_UNARY, _less, _greater, _identifier
         if pstate.is_next(_less):
             pstate.advance()
-            scalar_or_vec = None
             if pstate.is_next(_greater):
                 typename = None
-                pstate.advance()
-            elif pstate.is_next(_colon):
-                # force scalar specified
-                typename = None
-                pstate.advance()
-                pstate.expect(_identifier)
-                scalar_or_vec = pstate.next_str_and_advance()
-                pstate.expect(_greater)
                 pstate.advance()
             else:
                 pstate.expect(_identifier)
                 typename = pstate.next_str()
                 pstate.advance()
-                # check for scalar / vector specification
-                if pstate.is_next(_colon):
-                    pstate.advance()
-                    pstate.expect(_identifier)
-                    scalar_or_vec = pstate.next_str()
-                    pstate.advance()
-
                 pstate.expect(_greater)
                 pstate.advance()
 
-            if scalar_or_vec:
-                if scalar_or_vec not in ['s', 'v']:
-                    raise TypeError("Cannot force assignment to type '{}'"
-                                    "did you mean, 's' (scalar) or 'v' (vector)?" %
-                                    scalar_or_vec)
-
             return TypeAnnotation(
                     typename,
-                    self.parse_expression(pstate, _PREC_UNARY),
-                    force_scalar=scalar_or_vec == 's',
-                    force_vector=scalar_or_vec == 'v')
+                    self.parse_expression(pstate, _PREC_UNARY))
         else:
             return super(LoopyParser, self).parse_prefix(pstate)
 

@@ -2880,20 +2880,6 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
 
     # fun with vector temporaries
 
-    # first, test parsing
-    knl = lp.make_kernel(
-        '{[i,j]: 0 <= i,j < 12}',
-        """
-        <> t = 1
-        <int32> t1 = 1
-        <int32:s> t2 = 1
-        <:s> t3 = 1
-        <:v> tv = 1
-        <int32> tv1 = 1
-        <int32:v> tv2 = 1
-        <:v> tv3 = 1
-        """)
-
     def make_kernel(insn, ans=None, preamble=None, extra_inames=None, skeleton=None,
                     dtype=None):
         skeleton = """
@@ -2949,40 +2935,7 @@ def test_explicit_simd_temporary_promotion(ctx_factory):
         """)
     assert knl.temporary_variables['test2'].shape == (4,)
 
-    # case 4) test that a conflict in user-specified vector types results in error
-
-    # 4a) initial scalar assignment w/ later vector access
-    preamble = """
-    for k
-        <:s> test = 1
-    end
-    """
-
-    from loopy import LoopyError
-    with pytest.raises(LoopyError):
-        make_kernel('test = mask[j]', preamble=preamble, extra_inames='k')
-
-    # 4b) initial vector assignment w/ later scalar access -- OK
-
-    preamble = """
-    for k
-        <:v> test = 1
-    end
-    """
-
-    from loopy import LoopyError
-    # treat warning as error to make sure the logic detecting user specified
-    # vectorization is good
-    import warnings
-    try:
-        warnings.filterwarnings(
-            'error', r"Instruction '[^\W]+': touched variable that \(for ILP\)")
-        make_kernel('test = mask[i]', preamble=preamble, extra_inames='k')
-    except Exception:
-        raise
-    finally:
-        warnings.resetwarnings()
-
+    # case 4)
     # modified case from pyjac -- what makes this case special is that
     # Kc is never directly assigned to in an instruction that directly references
     # the vector iname, j_inner.  Instead, it is a good test of the recursive

@@ -166,15 +166,6 @@ def privatize_temporaries_with_inames(
 
             new_priv_axis_inames = priv_axis_inames - referenced_priv_axis_inames
 
-            if not new_priv_axis_inames and tv.name in var_to_new_priv_axis_iname:
-                # conflict
-                raise LoopyError("instruction '%s' requires var '%s' to be a "
-                                 "scalar but previous instructions required "
-                                 "vector/ILP inames '%s'" % (
-                                        writer_insn_id, tv.name, ", ".join(
-                                            var_to_new_priv_axis_iname[
-                                                tv.name])))
-
             if not new_priv_axis_inames:
                 continue
 

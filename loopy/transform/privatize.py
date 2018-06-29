@@ -117,10 +117,15 @@ def privatize_temporaries_with_inames(
                 for s in only_var_names.split(","))
 
     def find_privitzing_inames(writer_insn, iname, temp_var):
-        # test that -- a) the iname is an ILP or vector tag
-        if filter_iname_tags_by_type(kernel.iname_to_tags[iname],
-                                     (IlpBaseTag, VectorizeTag)):
-            # and b) instruction depends on the ILP/vector iname
+        # test that the iname is an ILP or vector tag
+        if filter_iname_tags_by_type(kernel.iname_to_tags[iname], IlpBaseTag):
+            # ILP inames have no additional requirements for promotion
+            return set([iname])
+        if filter_iname_tags_by_type(kernel.iname_to_tags[iname], VectorizeTag):
+            # For vector inames, we should only consider an iname if the
+            # instruction _directly_ depends on it (to avoid spurious vector
+            # promotions).  Missed promotions will be handled in the recursive
+            # application step
             return set([iname]) & writer_insn.dependency_names()
         return set()
 
@@ -136,21 +141,16 @@ def privatize_temporaries_with_inames(
         if only_var_names is not None and tv.name not in only_var_names:
             continue
 
-        seen = set()
         for writer_insn_id in set(wmap.get(tv.name, [])):
-            if writer_insn_id in seen:
-                continue
             writer_insn = kernel.id_to_insn[writer_insn_id]
-            seen.add(writer_insn_id)
-
             test_inames = kernel.insn_inames(writer_insn) & privatizing_inames
 
-            # A temporary variable that's only assigned to from other vector or ILP
-            # temporaries will never have a direct-dependency on the privitizing
+            # A temporary variable that's only assigned to from other vector
+            # temporaries will never have a direct-dependency on the vector
             # iname. After building a map of which temporary variables write to
             # others, we can recursively travel down the temporary variable write-map
-            # of any newly privitized temporary variable, and extend the
-            # privitization to those temporary variables dependent on it.
+            # of any newly vectorized temporary variable, and extend the
+            # vectorization to those temporary variables dependent on it.
 
             for tv_read in writer_insn.read_dependency_names():
                 if tv_read in kernel.temporary_variables:
@@ -186,7 +186,7 @@ def privatize_temporaries_with_inames(
 
     # }}}
 
-    # {{{ recursively apply vector / ILP temporary write heuristic
+    # {{{ recursively apply vector temporary write heuristic
 
     def recursively_apply(varname, starting_dict, applied=None):
         if applied is None:
@@ -211,6 +211,7 @@ def privatize_temporaries_with_inames(
 
         return starting_dict
 
+    # apply recursive write heueristic
     for varname in list(var_to_new_priv_axis_iname.keys()):
         if any(filter_iname_tags_by_type(kernel.iname_to_tags[iname], VectorizeTag)
                for iname in var_to_new_priv_axis_iname[varname]):
@@ -219,7 +220,7 @@ def privatize_temporaries_with_inames(
 
     # }}}
 
-    # {{{ find ilp iname lengths
+    # {{{ find privitizing iname lengths
 
     from loopy.isl_helpers import static_max_of_pw_aff
     from loopy.symbolic import pw_aff_to_expr

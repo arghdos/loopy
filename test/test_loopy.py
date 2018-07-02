@@ -3072,24 +3072,63 @@ def test_explicit_vector_dtype_conversion(ctx_factory, lhs_dtype, rhs_dtype):
     ctx = ctx_factory()
 
     # test that dtype conversion happens correctly between differing vector-dtypes
+    def __make_kernel(insn, has_conversion=True, uses_temp=True):
+        vw = 4
+        a_lp = lp.GlobalArg('a', shape=(12,), dtype=rhs_dtype)
+        temp_lp = lp.TemporaryVariable('temp', dtype=lhs_dtype)
 
-    vw = 4
-    a_lp = lp.GlobalArg('a', shape=(12,), dtype=rhs_dtype)
-    temp_lp = lp.TemporaryVariable('temp', dtype=lhs_dtype)
+        knl = lp.make_kernel(['{[i]: 0 <= i < 12}'],
+                """
+                for i
+                    {insn}
+                end
+                """.format(insn=insn),
+                [a_lp, temp_lp],
+                target=lp.PyOpenCLTarget(ctx.devices[0]),
+                silenced_warnings=['temp_to_write(temp)'] if not uses_temp else [])
+        knl = lp.split_iname(knl, 'i', vw, inner_tag='vec')
+        knl = lp.split_array_axis(knl, 'a', 0, 4)
+        knl = lp.tag_array_axes(knl, 'a', 'N0,vec')
 
-    knl = lp.make_kernel(['{[i]: 0 <= i < 12}'],
-            """
-            for i
-                temp = a[i]
-            end
-            """,
-            [a_lp, temp_lp])
-    knl = lp.split_iname(knl, 'i', vw, inner_tag='vec')
-    knl = lp.split_array_axis(knl, 'a', 0, 4)
-    knl = lp.tag_array_axes(knl, 'a', 'N0,vec')
+        queue = cl.CommandQueue(ctx)
+        # check that the kernel compiles correctly
+        knl(queue, a=np.zeros((12,), dtype=rhs_dtype).reshape((3, 4)))
 
-    queue = cl.CommandQueue(ctx)
-    knl(queue, a=np.zeros((12,), dtype=rhs_dtype).reshape((3, 4)))
+        # check that we have or don't have a conversion
+        assert ('convert_' in lp.generate_code_v2(knl).device_code()) == \
+            has_conversion
+
+    # test simple dtype conversion
+    __make_kernel("temp = a[i]")
+
+    # test literal assignment
+    __make_kernel("a[i] = 1", False, False)
+
+    # test that a non-vector temporary doesn't trigger conversion
+    #
+    # this should generate the code (e.g.,):
+    #   __kernel void __attribute__ ((reqd_work_group_size(1, 1, 1)))
+    #   loopy_kernel(__global long4 *__restrict__ a)
+    #   {
+    #      int temp;
+    #      for (int i_outer = 0; i_outer <= 2; ++i_outer)
+    #      {
+    #        temp = 1;
+    #        a[i_outer] = temp;
+    #      }
+    #    }
+    #
+    # that is, temp should _not_ be assigned to "a" w/ convert_long4
+    __make_kernel("""
+                      temp = 1
+                      a[i] = temp
+                  """, has_conversion=False)
+
+    # test that the inverse _does_ result in a convers
+    __make_kernel("""
+                      temp = a[i] {id=1, dep=*}
+                      a[i] = temp {id=2, dep=1}
+                  """)
 
 
 def test_vectorizability():

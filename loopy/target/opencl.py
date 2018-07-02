@@ -349,16 +349,24 @@ class ExpressionToOpenCLCExpressionMapper(ExpressionToCExpressionMapper):
             actual_type, needed_dtype, s)
         if self.codegen_state.vectorization_info is not None and (
                 actual_type != needed_dtype):
-            from loopy.symbolic import Literal
-            if isinstance(s, Literal):
-                # if its a literal, no need for explicit conversion
-                return wrap
+            from loopy.symbolic import get_dependencies
+            from loopy.kernel.array import VectorArrayDimTag
+            rhs_deps = get_dependencies(s)
 
-            ctype = self.kernel.target.get_dtype_registry().dtype_to_ctype(
-                needed_dtype)
-            vw = self.codegen_state.vectorization_info.length
-            # need to add an explicit conversion
-            return var("convert_%s%d" % (ctype, vw))(wrap)
+            def is_vector(var):
+                return any(isinstance(x, VectorArrayDimTag) for x in var.dim_tags)
+            # if we have a vector-type on the RHS and the RHS dtype != LHS dtype,
+            # we need an explicit conversion
+            rhs_temp_vars = rhs_deps & set(self.kernel.temporary_variables.keys())
+            rhs_args = rhs_deps & set(self.kernel.arg_dict.keys())
+            if any(is_vector(self.kernel.temporary_variables[x])
+                   for x in rhs_temp_vars) or any(
+                   is_vector(self.kernel.arg_dict[x]) for x in rhs_args):
+                ctype = self.kernel.target.get_dtype_registry().dtype_to_ctype(
+                    needed_dtype)
+                vw = self.codegen_state.vectorization_info.length
+                # need to add an explicit conversion
+                return var("convert_%s%d" % (ctype, vw))(wrap)
         return wrap
 
 # }}}

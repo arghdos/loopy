@@ -3191,8 +3191,9 @@ def test_vectorizability():
     run(func_list=['acos', 'exp10', 'atan2', 'round'],
         unary_funcs=['round', 'acos', 'exp10'])
 
-    # 5) remainders
-    run(['%'])
+    # 5) remainders and floor division (use 4 instead of 1 to avoid pymbolic
+    #    optimizing out the a[i] % 1)
+    run(['%', '//'], rvals=['a[i]', '4'])
 
 
 def test_check_for_variable_access_ordering():

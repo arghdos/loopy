@@ -110,6 +110,14 @@ class VectorizabilityChecker(RecursiveMapper):
 
     map_remainder = map_quotient
 
+    def map_floor_div(self, expr):
+        """
+        (a) - ( ((a)<0) ? ((b)-1) : 0 )  ) / (b)
+        """
+        a, b = expr.numerator, expr.denominator
+        return self.rec(a) and self.rec(a.lt(0)) and self.rec(b - 1) and \
+            self.rec((a - (b - 1)) / b) and self.rec(a / b)
+
     def map_linear_subscript(self, expr):
         return False
 

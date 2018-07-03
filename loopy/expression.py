@@ -108,6 +108,8 @@ class VectorizabilityChecker(RecursiveMapper):
                 or
                 self.rec(expr.denominator))
 
+    map_remainder = map_quotient
+
     def map_linear_subscript(self, expr):
         return False
 

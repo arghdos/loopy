@@ -3164,18 +3164,18 @@ def test_vectorizability():
         assert isinstance(knl.args[0].dim_tags[-1], VectorArrayDimTag)
         assert filter_iname_tags_by_type(knl.iname_to_tags['i_inner'], VectorizeTag)
 
-    def run(op_list=[], unary_operators=[], func_list=[], unary_funcs=[]):
+    def run(op_list=[], unary_operators=[], func_list=[], unary_funcs=[],
+            rvals=['1', 'a[i]']):
         for op in op_list:
             template = 'a[i] = a[i] %(op)s %(rval)s' \
                 if op not in unary_operators else 'a[i] = %(op)s a[i]'
-
-            create_and_test(template % dict(op=op, rval='1'))
-            create_and_test(template % dict(op=op, rval='a[i]'))
+            for rval in rvals:
+                create_and_test(template % dict(op=op, rval=rval))
         for func in func_list:
             template = 'a[i] = %(func)s(a[i], %(rval)s)' \
                 if func not in unary_funcs else 'a[i] = %(func)s(a[i])'
-            create_and_test(template % dict(func=func, rval='1'))
-            create_and_test(template % dict(func=func, rval='a[i]'))
+            for rval in rvals:
+                create_and_test(template % dict(func=func, rval=rval))
 
     # 1) comparisons
     run(['>', '>=', '<', '<=', '==', '!='])
@@ -3190,6 +3190,9 @@ def test_vectorizability():
     # 4) functions -- a random selection of the enabled math functions in opencl
     run(func_list=['acos', 'exp10', 'atan2', 'round'],
         unary_funcs=['round', 'acos', 'exp10'])
+
+    # 5) remainders
+    run(['%'])
 
 
 def test_check_for_variable_access_ordering():

@@ -2874,6 +2874,7 @@ def test_half_complex_conditional(ctx_factory):
 
 def test_local_arg_execution(ctx_factory):
     ctx = ctx_factory()
+    from loopy.kernel.data import AddressSpace
 
     # simple example, allow the user to pass in a workspace local array
     knl = lp.make_kernel(

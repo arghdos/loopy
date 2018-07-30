@@ -63,8 +63,8 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
     # {{{ handle non-numpy args
 
     def handle_non_numpy_arg(self, gen, arg):
-        from loopy.kernel.data import AddressScope
-        is_local = arg.address_scope == AddressScope.LOCAL
+        from loopy.kernel.data import AddressSpace
+        is_local = arg.address_space == AddressSpace.LOCAL
         gen("if isinstance(%s, _lpy_np.ndarray):" % arg.name)
         with Indentation(gen):
             if is_local:

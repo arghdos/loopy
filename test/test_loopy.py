@@ -2895,6 +2895,19 @@ def test_local_arg_execution(ctx_factory):
     knl = lp.split_iname(knl, 'i', 4, inner_tag='l.0')
     lp.auto_test_vs_ref(ref_knl, ctx, knl)
 
+    # call directly w/ cl local memory
+    from pytools import product
+    nbytes = product(si for si in knl.arg_dict['tmp'].shape) * \
+        knl.arg_dict['tmp'].dtype.itemsize
+    from pyopencl import LocalMemory
+    queue = cl.CommandQueue(ctx)
+    tmp = LocalMemory(nbytes)
+    knl(queue, tmp=tmp, out=np.zeros(10, dtype=np.int32))
+    # and that we get an error if we're short on memory
+    tmp = LocalMemory(nbytes - 1)
+    with pytest.raises(TypeError):
+        knl(queue, tmp=tmp, out=np.zeros(10, dtype=np.int32))
+
     # try with 2 local args for compatibility
     knl = lp.make_kernel(
             "{[i,i0]: 0 <= i,i0 < 10}",

@@ -212,7 +212,7 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
     def generate_output_handler(
             self, gen, options, kernel, implemented_data_info):
 
-        from loopy.kernel.data import KernelArgument
+        from loopy.kernel.data import KernelArgument, AddressSpace
 
         if not options.no_numpy:
             gen("if out_host is None and (_lpy_encountered_numpy "
@@ -225,6 +225,9 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
                 gen("pass")  # if no outputs (?!)
                 for arg in implemented_data_info:
                     if not issubclass(arg.arg_class, KernelArgument):
+                        continue
+                    elif arg.address_space == AddressSpace.LOCAL:
+                        # local memory doesn't have a .get()
                         continue
 
                     is_written = arg.base_name in kernel.get_written_variables()

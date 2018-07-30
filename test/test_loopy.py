@@ -2875,6 +2875,7 @@ def test_half_complex_conditional(ctx_factory):
 def test_local_arg_execution(ctx_factory):
     ctx = ctx_factory()
     from loopy.kernel.data import AddressSpace
+    local = AddressSpace.LOCAL
 
     # simple example, allow the user to pass in a workspace local array
     knl = lp.make_kernel(
@@ -2884,7 +2885,7 @@ def test_local_arg_execution(ctx_factory):
                 ... lbarrier {id=barrier, mem_kind=local, dep=init}
                 out[i0] = tmp[(i0 + 1) % 10] {id=set, dep=init:barrier}
            """,
-           [lp.ArrayArg('tmp', address_space=AddressSpace.LOCAL, shape=(10,),
+           [lp.ArrayArg('tmp', address_space=local, shape=(10,),
                         dtype=np.int32),
             lp.GlobalArg('out', shape=(10,), dtype=np.int32)]
            )
@@ -2907,8 +2908,8 @@ def test_local_arg_execution(ctx_factory):
                 out[i0] = tmp[tmp2[i0] % 10] {id=set, dep=barrier}
             end
             """,
-            [lp.LocalArg('tmp', shape=(10,), dtype=np.int32),
-             lp.LocalArg('tmp2', shape=(10,), dtype=np.int32),
+            [lp.ArrayArg('tmp', shape=(10,), dtype=np.int32, address_space=local),
+             lp.ArrayArg('tmp2', shape=(10,), dtype=np.int32, address_space=local),
              lp.GlobalArg('out', shape=(10,), dtype=np.int32)]
            )
 

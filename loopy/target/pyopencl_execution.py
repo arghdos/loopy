@@ -84,13 +84,6 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
                     "pyopencl.LocalMemory object.'" % arg.name)
             else:
                 gen("_lpy_encountered_dev = True")
-        if is_local:
-            from numpy import prod
-            gen('else:')
-            with Indentation(gen):
-                gen('# create a properly sized LocalMemory object')
-                gen('%s = _lpy_cl.LocalMemory(%d)' % (
-                    arg.name, prod(arg.shape) * arg.dtype.itemsize))
 
         gen("")
 
@@ -103,6 +96,15 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
         Handle allocation of non-specified arguements for pyopencl execution
         """
         from pymbolic import var
+        from loopy.kernel.data import AddressSpace
+
+        if arg.address_space == AddressSpace.LOCAL:
+            # handle local argument allocations
+            from numpy import prod
+            gen('# create a properly sized LocalMemory object')
+            gen('%s = _lpy_cl.LocalMemory(%d)' % (
+                arg.name, prod(arg.shape) * arg.dtype.itemsize))
+            return
 
         num_axes = len(arg.strides)
         for i in range(num_axes):

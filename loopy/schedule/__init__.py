@@ -212,12 +212,11 @@ def find_loop_nest_with_map(kernel):
     """
     result = {}
 
-    from loopy.kernel.data import (ConcurrentTag, IlpBaseTag, VectorizeTag,
-                                   filter_iname_tags_by_type)
+    from loopy.kernel.data import ConcurrentTag, IlpBaseTag, VectorizeTag
 
     all_nonpar_inames = set(
             iname for iname in kernel.all_inames()
-            if not filter_iname_tags_by_type(kernel.iname_to_tags[iname],
+            if not kernel.iname_tags_of_type(iname,
                     (ConcurrentTag, IlpBaseTag, VectorizeTag)))
 
     iname_to_insns = kernel.iname_to_insns()
@@ -241,15 +240,14 @@ def find_loop_nest_around_map(kernel):
     iname_to_insns = kernel.iname_to_insns()
 
     # examine pairs of all inames--O(n**2), I know.
-    from loopy.kernel.data import IlpBaseTag, filter_iname_tags_by_type
+    from loopy.kernel.data import IlpBaseTag
     for inner_iname in all_inames:
         result[inner_iname] = set()
         for outer_iname in all_inames:
             if inner_iname == outer_iname:
                 continue
 
-            tags = kernel.iname_to_tags[outer_iname]
-            if filter_iname_tags_by_type(tags, IlpBaseTag):
+            if kernel.iname_tags_of_type(outer_iname, IlpBaseTag):
                 # ILP tags are special because they are parallel tags
                 # and therefore 'in principle' nest around everything.
                 # But they're realized by the scheduler as a loop
@@ -278,11 +276,10 @@ def find_loop_insn_dep_map(kernel, loop_nest_with_map, loop_nest_around_map):
 
     result = {}
 
-    from loopy.kernel.data import (ConcurrentTag, IlpBaseTag, VectorizeTag,
-                                   filter_iname_tags_by_type)
+    from loopy.kernel.data import ConcurrentTag, IlpBaseTag, VectorizeTag
     for insn in kernel.instructions:
         for iname in kernel.insn_inames(insn):
-            if filter_iname_tags_by_type(kernel.iname_to_tags[iname], ConcurrentTag):
+            if kernel.iname_tags_of_type(iname, ConcurrentTag):
                 continue
 
             iname_dep = result.setdefault(iname, set())
@@ -312,8 +309,7 @@ def find_loop_insn_dep_map(kernel, loop_nest_with_map, loop_nest_around_map):
                         # -> safe.
                         continue
 
-                    tags = kernel.iname_to_tags[dep_insn_iname]
-                    if filter_iname_tags_by_type(tags,
+                    if kernel.iname_tags_of_type(dep_insn_iname,
                                 (ConcurrentTag, IlpBaseTag, VectorizeTag)):
                         # Parallel tags don't really nest, so we'll disregard
                         # them here.
@@ -1854,8 +1850,8 @@ def generate_loop_schedules(kernel, debug_args={}):
 
 
 def generate_loop_schedules_inner(kernel, debug_args={}):
-    from loopy.kernel import kernel_state
-    if kernel.state not in (kernel_state.PREPROCESSED, kernel_state.SCHEDULED):
+    from loopy.kernel import KernelState
+    if kernel.state not in (KernelState.PREPROCESSED, KernelState.SCHEDULED):
         raise LoopyError("cannot schedule a kernel that has not been "
                 "preprocessed")
 
@@ -1866,7 +1862,7 @@ def generate_loop_schedules_inner(kernel, debug_args={}):
 
     debug = ScheduleDebugger(**debug_args)
 
-    preschedule = kernel.schedule if kernel.state == kernel_state.SCHEDULED else ()
+    preschedule = kernel.schedule if kernel.state == KernelState.SCHEDULED else ()
 
     prescheduled_inames = set(
             insn.iname
@@ -1918,7 +1914,7 @@ def generate_loop_schedules_inner(kernel, debug_args={}):
 
             unscheduled_insn_ids=set(insn.id for insn in kernel.instructions),
             scheduled_insn_ids=frozenset(),
-            within_subkernel=kernel.state != kernel_state.SCHEDULED,
+            within_subkernel=kernel.state != KernelState.SCHEDULED,
             may_schedule_global_barriers=True,
 
             preschedule=preschedule,
@@ -1988,11 +1984,11 @@ def generate_loop_schedules_inner(kernel, debug_args={}):
 
             new_kernel = kernel.copy(
                     schedule=gen_sched,
-                    state=kernel_state.SCHEDULED)
+                    state=KernelState.SCHEDULED)
 
             from loopy.schedule.device_mapping import \
                     map_schedule_onto_host_or_device
-            if kernel.state != kernel_state.SCHEDULED:
+            if kernel.state != KernelState.SCHEDULED:
                 # Device mapper only gets run once.
                 new_kernel = map_schedule_onto_host_or_device(new_kernel)
 

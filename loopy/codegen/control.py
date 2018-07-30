@@ -64,7 +64,7 @@ def synthesize_idis_for_extra_args(kernel, schedule_index):
     sched_item = kernel.schedule[schedule_index]
 
     from loopy.codegen import ImplementedDataInfo
-    from loopy.kernel.data import InameArg, temp_var_scope
+    from loopy.kernel.data import InameArg, AddressSpace
 
     assert isinstance(sched_item, CallKernel)
 
@@ -72,7 +72,7 @@ def synthesize_idis_for_extra_args(kernel, schedule_index):
 
     for arg in sched_item.extra_args:
         temporary = kernel.temporary_variables[arg]
-        assert temporary.scope == temp_var_scope.GLOBAL
+        assert temporary.address_space == AddressSpace.GLOBAL
         idis.extend(
             temporary.decl_info(
                 kernel.target,
@@ -128,7 +128,7 @@ def generate_code_for_sched_index(codegen_state, sched_index):
             ])
 
     elif isinstance(sched_item, EnterLoop):
-        tags = kernel.iname_to_tags[sched_item.iname]
+        tags = kernel.iname_tags(sched_item.iname)
         tags = tuple(tag for tag in tags if tag)
 
         from loopy.codegen.loop import (
@@ -143,7 +143,7 @@ def generate_code_for_sched_index(codegen_state, sched_index):
             func = generate_unroll_loop
         elif filter_iname_tags_by_type(tags, VectorizeTag):
             func = generate_vectorize_loop
-        elif len(tags) == 0 or filter_iname_tags_by_type(tags, (LoopedIlpTag,
+        elif not tags or filter_iname_tags_by_type(tags, (LoopedIlpTag,
                     ForceSequentialTag, InOrderSequentialSequentialTag)):
             func = generate_sequential_loop_dim_code
         else:
@@ -423,7 +423,7 @@ def build_loop_nest(codegen_state, schedule_index):
 
             # }}}
 
-            only_unshared_inames = kernel.remove_inames_for_shared_hw_axes(
+            only_unshared_inames = kernel._remove_inames_for_shared_hw_axes(
                     current_iname_set & used_inames)
 
             bounds_checks = bounds_check_cache(only_unshared_inames)

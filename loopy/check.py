@@ -53,7 +53,8 @@ def check_identifiers_in_subst_rules(knl):
             raise LoopyError("kernel '%s': substitution rule '%s' refers to "
                     "identifier(s) '%s' which are neither rule arguments nor "
                     "kernel-global identifiers"
-                    % (knl.name, ", ".join(deps-rule_allowed_identifiers)))
+                    % (knl.name, rule.name,
+                       ", ".join(deps-rule_allowed_identifiers)))
 
 # }}}
 
@@ -128,13 +129,12 @@ def check_multiple_tags_allowed(kernel):
 
 
 def check_for_double_use_of_hw_axes(kernel):
-    from loopy.kernel.data import UniqueTag, filter_iname_tags_by_type
+    from loopy.kernel.data import UniqueTag
 
     for insn in kernel.instructions:
         insn_tag_keys = set()
         for iname in kernel.insn_inames(insn):
-            tags = kernel.iname_to_tags[iname]
-            for tag in filter_iname_tags_by_type(tags, UniqueTag):
+            for tag in kernel.iname_tags_of_type(iname, UniqueTag):
                 key = tag.key
                 if key in insn_tag_keys:
                     raise LoopyError("instruction '%s' has multiple "
@@ -156,33 +156,33 @@ def check_for_inactive_iname_access(kernel):
 
 
 def _is_racing_iname_tag(tv, tag):
-    from loopy.kernel.data import (temp_var_scope,
+    from loopy.kernel.data import (AddressSpace,
             LocalIndexTagBase, GroupIndexTag, ConcurrentTag, auto)
 
-    if tv.scope == temp_var_scope.PRIVATE:
+    if tv.address_space == AddressSpace.PRIVATE:
         return (
                 isinstance(tag, ConcurrentTag)
                 and not isinstance(tag, (LocalIndexTagBase, GroupIndexTag)))
 
-    elif tv.scope == temp_var_scope.LOCAL:
+    elif tv.address_space == AddressSpace.LOCAL:
         return (
                 isinstance(tag, ConcurrentTag)
                 and not isinstance(tag, GroupIndexTag))
 
-    elif tv.scope == temp_var_scope.GLOBAL:
+    elif tv.address_space == AddressSpace.GLOBAL:
         return isinstance(tag, ConcurrentTag)
 
-    elif tv.scope == auto:
+    elif tv.address_space == auto:
         raise LoopyError("scope of temp var '%s' has not yet been"
                 "determined" % tv.name)
 
     else:
-        raise ValueError("unexpected value of temp_var.scope for "
+        raise ValueError("unexpected value of temp_var.address_space for "
                 "temporary variable '%s'" % tv.name)
 
 
 def check_for_write_races(kernel):
-    from loopy.kernel.data import ConcurrentTag, filter_iname_tags_by_type
+    from loopy.kernel.data import ConcurrentTag
 
     for insn in kernel.instructions:
         for assignee_name, assignee_indices in zip(
@@ -201,15 +201,14 @@ def check_for_write_races(kernel):
 
                 raceable_parallel_insn_inames = set(
                     iname for iname in kernel.insn_inames(insn)
-                    if filter_iname_tags_by_type(kernel.iname_to_tags[iname],
-                                      ConcurrentTag))
+                    if kernel.iname_tags_of_type(iname, ConcurrentTag))
 
             elif assignee_name in kernel.temporary_variables:
                 temp_var = kernel.temporary_variables[assignee_name]
                 raceable_parallel_insn_inames = set(
                         iname for iname in kernel.insn_inames(insn)
                         if any(_is_racing_iname_tag(temp_var, tag)
-                            for tag in kernel.iname_to_tags[iname]))
+                            for tag in kernel.iname_tags(iname)))
 
             else:
                 raise LoopyError("invalid assignee name in instruction '%s'"
@@ -245,12 +244,13 @@ def check_for_orphaned_user_hardware_axes(kernel):
 
 
 def check_for_data_dependent_parallel_bounds(kernel):
-    from loopy.kernel.data import ConcurrentTag, filter_iname_tags_by_type
+    from loopy.kernel.data import ConcurrentTag
 
     for i, dom in enumerate(kernel.domains):
         dom_inames = set(dom.get_var_names(dim_type.set))
-        par_inames = set(iname for iname in dom_inames
-            if filter_iname_tags_by_type(kernel.iname_to_tags[iname], ConcurrentTag))
+        par_inames = set(
+                iname for iname in dom_inames
+                if kernel.iname_tags_of_type(iname, ConcurrentTag))
 
         if not par_inames:
             continue
@@ -415,9 +415,18 @@ class IndirectDependencyEdgeFinder(object):
         cache_key = (depender_id, dependee_id)
 
         try:
-            return self.dep_edge_cache[cache_key]
+            result = self.dep_edge_cache[cache_key]
         except KeyError:
             pass
+        else:
+            if result is None:
+                from loopy.diagnostic import DependencyCycleFound
+                raise DependencyCycleFound("when "
+                        "checking for dependency edge between "
+                        "depender '%s' and dependee '%s'"
+                        % (depender_id, dependee_id))
+            else:
+                return result
 
         depender = self.kernel.id_to_insn[depender_id]
 
@@ -425,6 +434,7 @@ class IndirectDependencyEdgeFinder(object):
             self.dep_edge_cache[cache_key] = True
             return True
 
+        self.dep_edge_cache[cache_key] = None
         for dep in depender.depends_on:
             if self(dep, dependee_id):
                 self.dep_edge_cache[cache_key] = True
@@ -434,16 +444,16 @@ class IndirectDependencyEdgeFinder(object):
         return False
 
 
-def declares_nosync_with(kernel, var_scope, dep_a, dep_b):
-    from loopy.kernel.data import temp_var_scope
-    if var_scope == temp_var_scope.GLOBAL:
+def declares_nosync_with(kernel, var_address_space, dep_a, dep_b):
+    from loopy.kernel.data import AddressSpace
+    if var_address_space == AddressSpace.GLOBAL:
         search_scopes = ["global", "any"]
-    elif var_scope == temp_var_scope.LOCAL:
+    elif var_address_space == AddressSpace.LOCAL:
         search_scopes = ["local", "any"]
-    elif var_scope == temp_var_scope.PRIVATE:
+    elif var_address_space == AddressSpace.PRIVATE:
         search_scopes = ["any"]
     else:
-        raise ValueError("unexpected value of 'temp_var_scope'")
+        raise ValueError("unexpected value of 'AddressSpace'")
 
     ab_nosync = False
     ba_nosync = False
@@ -466,7 +476,7 @@ def _check_variable_access_ordered_inner(kernel):
     wmap = kernel.writer_map()
     rmap = kernel.reader_map()
 
-    from loopy.kernel.data import GlobalArg, LocalArg, ValueArg, temp_var_scope
+    from loopy.kernel.data import ValueArg, AddressSpace, ArrayArg
     from loopy.kernel.tools import find_aliasing_equivalence_classes
 
     depfind = IndirectDependencyEdgeFinder(kernel)
@@ -489,21 +499,19 @@ def _check_variable_access_ordered_inner(kernel):
             continue
 
         if name in kernel.temporary_variables:
-            scope = kernel.temporary_variables[name].scope
+            address_space = kernel.temporary_variables[name].address_space
         else:
             arg = kernel.arg_dict[name]
-            if isinstance(arg, GlobalArg):
-                scope = temp_var_scope.GLOBAL
-            elif isinstance(arg, LocalArg):
-                scope = temp_var_scope.LOCAL
+            if isinstance(arg, ArrayArg):
+                address_space = arg.address_space
             elif isinstance(arg, ValueArg):
-                scope = temp_var_scope.PRIVATE
+                address_space = AddressSpace.PRIVATE
             else:
                 # No need to consider ConstantArg and ImageArg (for now)
                 # because those won't be written.
-                raise ValueError("could not determine scope of '%s'" % name)
+                raise ValueError("could not determine address_space of '%s'" % name)
 
-        # Check even for PRIVATE scope, to ensure intentional program order.
+        # Check even for PRIVATE address space, to ensure intentional program order.
 
         from loopy.symbolic import AccessRangeOverlapChecker
         overlap_checker = AccessRangeOverlapChecker(kernel)
@@ -517,7 +525,7 @@ def _check_variable_access_ordered_inner(kernel):
                 other = kernel.id_to_insn[other_id]
 
                 has_dependency_relationship = (
-                        declares_nosync_with(kernel, scope, other, writer)
+                        declares_nosync_with(kernel, address_space, other, writer)
                         or
                         depfind(writer_id, other_id)
                         or
@@ -669,7 +677,7 @@ def _check_for_unused_hw_axes_in_kernel_chunk(kernel, sched_index=None):
     # alternative: just disregard length-1 dimensions?
 
     from loopy.kernel.data import (LocalIndexTag, AutoLocalIndexTagBase,
-                        GroupIndexTag, filter_iname_tags_by_type)
+                        GroupIndexTag)
 
     while i < loop_end_i:
         sched_item = kernel.schedule[i]
@@ -687,15 +695,18 @@ def _check_for_unused_hw_axes_in_kernel_chunk(kernel, sched_index=None):
             local_axes_used = set()
 
             for iname in kernel.insn_inames(insn):
-                tags = kernel.iname_to_tags[iname]
+                ltags = kernel.iname_tags_of_type(iname, LocalIndexTag, max_num=1)
+                gtags = kernel.iname_tags_of_type(iname, GroupIndexTag, max_num=1)
+                altags = kernel.iname_tags_of_type(
+                        iname, AutoLocalIndexTagBase, max_num=1)
 
-                if filter_iname_tags_by_type(tags, LocalIndexTag):
-                    tag, = filter_iname_tags_by_type(tags, LocalIndexTag, 1)
+                if ltags:
+                    tag, = ltags
                     local_axes_used.add(tag.axis)
-                elif filter_iname_tags_by_type(tags, GroupIndexTag):
-                    tag, = filter_iname_tags_by_type(tags, GroupIndexTag, 1)
+                elif gtags:
+                    tag, = gtags
                     group_axes_used.add(tag.axis)
-                elif filter_iname_tags_by_type(tags, AutoLocalIndexTagBase):
+                elif altags:
                     raise LoopyError("auto local tag encountered")
 
             if group_axes != group_axes_used:
@@ -767,7 +778,7 @@ def check_that_atomic_ops_are_used_exactly_on_atomic_arrays(kernel):
 # {{{ check that temporaries are defined in subkernels where used
 
 def check_that_temporaries_are_defined_in_subkernels_where_used(kernel):
-    from loopy.kernel.data import temp_var_scope
+    from loopy.kernel.data import AddressSpace
     from loopy.kernel.tools import get_subkernels
 
     for subkernel in get_subkernels(kernel):
@@ -798,7 +809,7 @@ def check_that_temporaries_are_defined_in_subkernels_where_used(kernel):
                             "aliases have a definition" % (temporary, subkernel))
                 continue
 
-            if tval.scope in (temp_var_scope.PRIVATE, temp_var_scope.LOCAL):
+            if tval.address_space in (AddressSpace.PRIVATE, AddressSpace.LOCAL):
                 from loopy.diagnostic import MissingDefinitionError
                 raise MissingDefinitionError("temporary variable '%s' gets used "
                         "in subkernel '%s' without a definition (maybe you forgot "
@@ -940,12 +951,11 @@ def check_implemented_domains(kernel, implemented_domains, code=None):
                 .project_out_except(insn_inames, [dim_type.set]))
 
         from loopy.kernel.instruction import BarrierInstruction
-        from loopy.kernel.data import LocalIndexTag, filter_iname_tags_by_type
+        from loopy.kernel.data import LocalIndexTag
         if isinstance(insn, BarrierInstruction):
             # project out local-id-mapped inames, solves #94 on gitlab
             non_lid_inames = frozenset(iname for iname in insn_inames
-                if not filter_iname_tags_by_type(
-                    kernel.iname_to_tags[iname], LocalIndexTag))
+                if not kernel.iname_tags_of_type(iname, LocalIndexTag))
             insn_impl_domain = insn_impl_domain.project_out_except(
                 non_lid_inames, [dim_type.set])
 

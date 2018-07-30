@@ -32,7 +32,7 @@ from loopy.diagnostic import LoopyError
 from loopy.symbolic import Literal
 from pymbolic import var
 import pymbolic.primitives as p
-from loopy.kernel.data import temp_var_scope
+from loopy.kernel.data import AddressSpace
 from pymbolic.mapper.stringifier import PREC_NONE
 
 from pytools import memoize_method
@@ -82,7 +82,7 @@ class ExprToISPCExprMapper(ExpressionToCExpressionMapper):
     def map_variable(self, expr, type_context):
         tv = self.kernel.temporary_variables.get(expr.name)
 
-        if tv is not None and tv.scope == temp_var_scope.PRIVATE:
+        if tv is not None and tv.address_space == AddressSpace.PRIVATE:
             # FIXME: This is a pretty coarse way of deciding what
             # private temporaries get duplicated. Refine? (See also
             # below in decl generation)
@@ -102,7 +102,7 @@ class ExprToISPCExprMapper(ExpressionToCExpressionMapper):
         ary = self.find_array(expr)
 
         if (isinstance(ary, TemporaryVariable)
-                and ary.scope == temp_var_scope.PRIVATE):
+                and ary.address_space == AddressSpace.PRIVATE):
             # generate access code for acccess to private-index temporaries
 
             gsize, lsize = self.kernel.get_grid_size_upper_bounds_as_exprs()
@@ -308,7 +308,7 @@ class ISPCASTBuilder(CASTBuilder):
 
         shape = decl_info.shape
 
-        if temp_var.scope == temp_var_scope.PRIVATE:
+        if temp_var.address_space == AddressSpace.PRIVATE:
             # FIXME: This is a pretty coarse way of deciding what
             # private temporaries get duplicated. Refine? (See also
             # above in expr to code mapper)
@@ -329,7 +329,7 @@ class ISPCASTBuilder(CASTBuilder):
         from cgen.ispc import ISPCUniform
         return ISPCUniform(decl)
 
-    def get_global_arg_decl(self, name, shape, dtype, is_written):
+    def get_array_arg_decl(self, name, mem_address_space, shape, dtype, is_written):
         from loopy.target.c import POD  # uses the correct complex type
         from cgen import Const
         from cgen.ispc import ISPCUniformPointer, ISPCUniform
@@ -342,6 +342,13 @@ class ISPCASTBuilder(CASTBuilder):
         arg_decl = ISPCUniform(arg_decl)
 
         return arg_decl
+
+    def get_global_arg_decl(self, name, shape, dtype, is_written):
+        from warnings import warn
+        warn("get_global_arg_decl is deprecated use get_array_arg_decl "
+                "instead.", DeprecationWarning, stacklevel=2)
+        return self.get_array_arg_decl(name, AddressSpace.GLOBAL, shape,
+                dtype, is_written)
 
     def get_value_arg_decl(self, name, shape, dtype, is_written):
         result = super(ISPCASTBuilder, self).get_value_arg_decl(
@@ -400,9 +407,9 @@ class ISPCASTBuilder(CASTBuilder):
                     lambda expr: evaluate(expr, self.codegen_state.var_subst_map),
                     codegen_state.vectorization_info)
 
-            from loopy.kernel.data import GlobalArg, TemporaryVariable
+            from loopy.kernel.data import ArrayArg, TemporaryVariable
 
-            if not isinstance(ary, (GlobalArg, TemporaryVariable)):
+            if not isinstance(ary, (ArrayArg, TemporaryVariable)):
                 raise LoopyError("array type not supported in ISPC: %s"
                         % type(ary).__name)
 
@@ -424,10 +431,9 @@ class ISPCASTBuilder(CASTBuilder):
             saw_l0 = False
             for term in terms:
                 if (isinstance(term, Variable)
-                        and filter_iname_tags_by_type(
-                            kernel.iname_to_tags[term.name], LocalIndexTag)):
-                        tag, = filter_iname_tags_by_type(
-                            kernel.iname_to_tags[term.name], LocalIndexTag, 1)
+                            and kernel.iname_tags_of_type(term.name, LocalIndexTag)):
+                        tag, = kernel.iname_tags_of_type(
+                            term.name, LocalIndexTag, min_num=1, max_num=1)
                         if tag.axis == 0:
                             if saw_l0:
                                 raise LoopyError(
@@ -458,7 +464,7 @@ class ISPCASTBuilder(CASTBuilder):
 
             rhs_has_programindex = any(
                 isinstance(tag, LocalIndexTag) and tag.axis == 0
-                for tag in kernel.iname_to_tags[dep]
+                for tag in kernel.iname_tags(dep)
                 for dep in get_dependencies(insn.expression))
 
             if not rhs_has_programindex:

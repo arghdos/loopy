@@ -36,7 +36,6 @@ from islpy import dim_type
 from loopy.diagnostic import LoopyError, warn_with_kernel
 from pytools import memoize_on_first_arg
 from loopy.tools import natsorted
-from loopy.kernel.data import filter_iname_tags_by_type
 
 import logging
 logger = logging.getLogger(__name__)
@@ -632,7 +631,7 @@ def is_domain_dependent_on_inames(kernel, domain_index, inames):
 # {{{ rank inames by stride
 
 def get_auto_axis_iname_ranking_by_stride(kernel, insn):
-    from loopy.kernel.data import ImageArg, ValueArg, filter_iname_tags_by_type
+    from loopy.kernel.data import ImageArg, ValueArg
 
     approximate_arg_values = {}
     for arg in kernel.args:
@@ -678,8 +677,7 @@ def get_auto_axis_iname_ranking_by_stride(kernel, insn):
     from loopy.kernel.data import AutoLocalIndexTagBase
     auto_axis_inames = set(
         iname for iname in kernel.insn_inames(insn)
-        if filter_iname_tags_by_type(
-            kernel.iname_to_tags[iname], AutoLocalIndexTagBase))
+        if kernel.iname_tags_of_type(iname, AutoLocalIndexTagBase))
 
     # }}}
 
@@ -780,7 +778,15 @@ def assign_automatic_axes(kernel, axis=0, local_size=None):
             # Likely unbounded, automatic assignment is not
             # going to happen for this iname.
             new_iname_to_tags = kernel.iname_to_tags.copy()
-            new_iname_to_tags[iname] = set()
+            new_tags = new_iname_to_tags.get(iname, frozenset())
+            new_tags = frozenset(tag for tag in new_tags
+                    if not isinstance(tag, AutoLocalIndexTagBase))
+
+            if new_tags:
+                new_iname_to_tags[iname] = new_tags
+            else:
+                del new_iname_to_tags[iname]
+
             return assign_automatic_axes(
                     kernel.copy(iname_to_tags=new_iname_to_tags),
                     axis=recursion_axis)
@@ -835,16 +841,24 @@ def assign_automatic_axes(kernel, axis=0, local_size=None):
                             do_tagged_check=False),
                         axis=recursion_axis, local_size=local_size)
 
-        if not filter_iname_tags_by_type(kernel.iname_to_tags[iname],
-                                    AutoLocalIndexTagBase):
+        if not kernel.iname_tags_of_type(iname, AutoLocalIndexTagBase):
             raise LoopyError("trying to reassign '%s'" % iname)
 
         if new_tag:
-            new_tag = set([new_tag])
+            new_tag_set = frozenset([new_tag])
         else:
-            new_tag = set()
+            new_tag_set = frozenset()
         new_iname_to_tags = kernel.iname_to_tags.copy()
-        new_iname_to_tags[iname] = new_tag
+        new_tags = (
+                frozenset(tag for tag in new_iname_to_tags.get(iname, frozenset())
+                    if not isinstance(tag, AutoLocalIndexTagBase))
+                | new_tag_set)
+
+        if new_tags:
+            new_iname_to_tags[iname] = new_tags
+        else:
+            del new_iname_to_tags[iname]
+
         return assign_automatic_axes(kernel.copy(iname_to_tags=new_iname_to_tags),
                 axis=recursion_axis, local_size=local_size)
 
@@ -863,8 +877,7 @@ def assign_automatic_axes(kernel, axis=0, local_size=None):
 
         auto_axis_inames = [
             iname for iname in kernel.insn_inames(insn)
-            if filter_iname_tags_by_type(kernel.iname_to_tags[iname],
-                                    AutoLocalIndexTagBase)]
+            if kernel.iname_tags_of_type(iname, AutoLocalIndexTagBase)]
 
         if not auto_axis_inames:
             continue
@@ -872,11 +885,8 @@ def assign_automatic_axes(kernel, axis=0, local_size=None):
         assigned_local_axes = set()
 
         for iname in kernel.insn_inames(insn):
-            tags = filter_iname_tags_by_type(
-                kernel.iname_to_tags[iname], LocalIndexTag)
+            tags = kernel.iname_tags_of_type(iname, LocalIndexTag, max_num=1)
             if tags:
-                if len(tags) > 1:
-                    raise LoopyError("cannot have more than one LocalIndexTags")
                 tag, = tags
                 assigned_local_axes.add(tag.axis)
 
@@ -887,7 +897,7 @@ def assign_automatic_axes(kernel, axis=0, local_size=None):
                 iname_ranking = get_auto_axis_iname_ranking_by_stride(kernel, insn)
                 if iname_ranking is not None:
                     for iname in iname_ranking:
-                        prev_tags = kernel.iname_to_tags[iname]
+                        prev_tags = kernel.iname_tags(iname)
                         if filter_iname_tags_by_type(
                                 prev_tags, AutoLocalIndexTagBase):
                             return assign_axis(axis, iname, axis)
@@ -1145,7 +1155,7 @@ def get_visual_iname_order_embedding(kernel):
     # nest.
     ilp_inames = frozenset(iname
         for iname in kernel.iname_to_tags
-        if filter_iname_tags_by_type(kernel.iname_to_tags[iname], IlpBaseTag))
+        if kernel.iname_tags_of_type(iname, IlpBaseTag))
 
     iname_trie = SetTrie()
 
@@ -1219,9 +1229,11 @@ def draw_dependencies_as_unicode_arrows(
         instances
     :arg fore: if given, will be used like a :mod:`colorama` ``Fore`` object
         to color-code dependencies. (E.g. red for downward edges)
-    :returns: A list of tuples (arrows, extender) with Unicode-drawn dependency
-        arrows, one per entry of *instructions*. *extender* can be used to
-        extend arrows below the line of an instruction.
+    :returns: A tuple ``(uniform_length, rows)``, where *rows* is a list of
+        tuples (arrows, extender) with Unicode-drawn dependency arrows, one per
+        entry of *instructions*. *extender* can be used to extend arrows below the
+        line of an instruction. *uniform_length* is the length of the *arrows* and
+        *extender* strings.
     """
     reverse_deps = {}
 
@@ -1235,6 +1247,8 @@ def draw_dependencies_as_unicode_arrows(
     # {{{ find column assignments
 
     # mapping from column indices to (end_insn_ids, pointed_at_insn_id)
+    # end_insn_ids is a set that gets modified in-place to remove 'ends'
+    # (arrow origins) as they are being passed.
     columns_in_use = {}
 
     n_columns = [0]
@@ -1272,8 +1286,10 @@ def draw_dependencies_as_unicode_arrows(
         rdeps = reverse_deps.get(insn.id, set()).copy() - processed_ids
         assert insn.id not in rdeps
 
-        if insn.id in dep_to_column:
-            columns_in_use[insn.id][0].update(rdeps)
+        col = dep_to_column.get(insn.id)
+        if col is not None:
+            columns_in_use[col][0].update(rdeps)
+        del col
 
         # }}}
 
@@ -1329,7 +1345,11 @@ def draw_dependencies_as_unicode_arrows(
             dep_key = dep
             if dep_key not in dep_to_column:
                 col = dep_to_column[dep_key] = find_free_column()
-                columns_in_use[col] = (set([insn.id]), dep)
+
+                # No need to add current instruction to end_insn_ids set, as
+                # we're currently handling it.
+                columns_in_use[col] = (set(), dep)
+
                 row[col] = do_flag_downward(u"┌", dep)
 
         # }}}
@@ -1354,12 +1374,30 @@ def draw_dependencies_as_unicode_arrows(
 
     added_ellipsis = [False]
 
+    def len_without_color_escapes(s):
+        s = (s
+                .replace(fore.RED, "")
+                .replace(style.RESET_ALL, ""))
+        return len(s)
+
+    def truncate_without_color_escapes(s, l):
+        # FIXME: This is a bit dumb--it removes color escapes when truncation
+        # is needed.
+
+        s = (s
+                .replace(fore.RED, "")
+                .replace(style.RESET_ALL, ""))
+
+        return s[:l] + u"…"
+
     def conform_to_uniform_length(s):
-        if len(s) <= uniform_length:
-            return s + " "*(uniform_length-len(s))
+        len_s = len_without_color_escapes(s)
+
+        if len_s <= uniform_length:
+            return s + " "*(uniform_length-len_s)
         else:
             added_ellipsis[0] = True
-            return s[:uniform_length] + u"…"
+            return truncate_without_color_escapes(s, uniform_length)
 
     rows = [
             (conform_to_uniform_length(row),
@@ -1369,10 +1407,10 @@ def draw_dependencies_as_unicode_arrows(
     if added_ellipsis[0]:
         uniform_length += 1
 
-    rows = [
-            (conform_to_uniform_length(row),
-                conform_to_uniform_length(extender))
-            for row, extender in rows]
+        rows = [
+                (conform_to_uniform_length(row),
+                    conform_to_uniform_length(extender))
+                for row, extender in rows]
 
     return uniform_length, rows
 
@@ -1687,8 +1725,8 @@ def get_subkernels(kernel):
 
     See also :class:`loopy.schedule.CallKernel`.
     """
-    from loopy.kernel import kernel_state
-    if kernel.state != kernel_state.SCHEDULED:
+    from loopy.kernel import KernelState
+    if kernel.state != KernelState.SCHEDULED:
         raise LoopyError("Kernel must be scheduled")
 
     from loopy.schedule import CallKernel
@@ -1704,8 +1742,8 @@ def get_subkernel_to_insn_id_map(kernel):
     consisting of the instruction ids scheduled within the subkernel. The
     kernel must be scheduled.
     """
-    from loopy.kernel import kernel_state
-    if kernel.state != kernel_state.SCHEDULED:
+    from loopy.kernel import KernelState
+    if kernel.state != KernelState.SCHEDULED:
         raise LoopyError("Kernel must be scheduled")
 
     from loopy.schedule import (
@@ -1813,5 +1851,38 @@ def find_aliasing_equivalence_classes(kernel):
 
 # }}}
 
+
+# {{{ direction helper tools
+
+def infer_arg_is_output_only(kernel):
+    """
+    Returns a copy of *kernel* with the attribute ``is_output_only`` set.
+
+    .. note::
+
+        If the attribute ``is_output_only`` is not supplied from an user, then
+        infers it as an output argument if it is written at some point in the
+        kernel.
+    """
+    from loopy.kernel.data import ArrayArg, ValueArg, ConstantArg, ImageArg
+    new_args = []
+    for arg in kernel.args:
+        if isinstance(arg, (ArrayArg, ImageArg, ValueArg)):
+            if arg.is_output_only is not None:
+                assert isinstance(arg.is_output_only, bool)
+                new_args.append(arg)
+            else:
+                if arg.name in kernel.get_written_variables():
+                    new_args.append(arg.copy(is_output_only=True))
+                else:
+                    new_args.append(arg.copy(is_output_only=False))
+        elif isinstance(arg, ConstantArg):
+            new_args.append(arg)
+        else:
+            raise NotImplementedError("Unkonwn argument type %s." % type(arg))
+
+    return kernel.copy(args=new_args)
+
+# }}}
 
 # vim: foldmethod=marker

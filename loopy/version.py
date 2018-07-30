@@ -42,7 +42,7 @@ else:
 # }}}
 
 
-VERSION = (2017, 2, 1)
+VERSION = (2018, 1)
 VERSION_STATUS = ""
 VERSION_TEXT = ".".join(str(x) for x in VERSION) + VERSION_STATUS
 
@@ -52,7 +52,16 @@ except ImportError:
     _islpy_version = "_UNKNOWN_"
 else:
     _islpy_version = islpy.version.VERSION_TEXT
-DATA_MODEL_VERSION = "%s-islpy%s-%s-v0" % (VERSION_TEXT, _islpy_version, _git_rev)
+
+try:
+    import cgen.version
+except ImportError:
+    _cgen_version = "_UNKNOWN_"
+else:
+    _cgen_version = cgen.version.VERSION_TEXT
+
+DATA_MODEL_VERSION = "%s-islpy%s-cgen%s-%s-v0" % (
+        VERSION_TEXT, _islpy_version, _cgen_version, _git_rev)
 
 
 FALLBACK_LANGUAGE_VERSION = (2017, 2, 1)

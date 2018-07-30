@@ -2883,7 +2883,7 @@ def test_local_arg_execution(ctx_factory):
            """
                 tmp[i] = i {id=init, dep=*}
                 ... lbarrier {id=barrier, mem_kind=local, dep=init}
-                out[i0] = tmp[(i0 + 1) % 10] {id=set, dep=init:barrier}
+                out[i0] = tmp[(i0 + 1) % 10] {id=set, dep=barrier, nosync=init}
            """,
            [lp.ArrayArg('tmp', address_space=local, shape=(10,),
                         dtype=np.int32),
@@ -2905,7 +2905,7 @@ def test_local_arg_execution(ctx_factory):
             end
             ... lbarrier {id=barrier, mem_kind=local, dep=init*}
             for i0
-                out[i0] = tmp[tmp2[i0] % 10] {id=set, dep=barrier}
+                out[i0] = tmp[tmp2[i0] % 10] {id=set, dep=barrier, nosync=init*}
             end
             """,
             [lp.ArrayArg('tmp', shape=(10,), dtype=np.int32, address_space=local),

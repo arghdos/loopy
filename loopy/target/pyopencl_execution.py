@@ -256,7 +256,9 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
         gen.add_to_preamble(codegen_result.host_code())
 
     def get_arg_pass(self, arg):
-        return "%s.base_data" % arg.name
+        from loopy.kernel.data import AddressSpace
+        is_local = arg.address_space == AddressSpace.LOCAL
+        return "%s%s" % (arg.name, '.base_data' if not is_local else '')
 
 # }}}
 

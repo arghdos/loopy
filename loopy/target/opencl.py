@@ -499,13 +499,6 @@ class OpenCLCASTBuilder(CASTBuilder):
         return self.get_array_arg_decl(name, AddressSpace.GLOBAL, shape,
                 dtype, is_written)
 
-    def get_local_arg_decl(self, name, shape, dtype, is_written):
-        from cgen.opencl import CLLocal
-
-        # can simply use a "global" c decl
-        return CLLocal(super(OpenCLCASTBuilder, self).get_global_arg_decl(
-            name, shape, dtype, is_written))
-
     def get_image_arg_decl(self, name, shape, num_target_axes, dtype, is_written):
         if is_written:
             mode = "w"

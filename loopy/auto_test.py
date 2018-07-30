@@ -80,7 +80,7 @@ def make_ref_args(kernel, impl_arg_info, queue, parameters):
     import pyopencl.array as cl_array
 
     from loopy.kernel.data import ValueArg, ArrayArg, ImageArg, \
-            TemporaryVariable, ConstantArg
+            TemporaryVariable, ConstantArg, AddressSpace
 
     from pymbolic import evaluate
 
@@ -110,6 +110,15 @@ def make_ref_args(kernel, impl_arg_info, queue, parameters):
 
         elif arg.arg_class is ArrayArg or arg.arg_class is ImageArg \
                 or arg.arg_class is ConstantArg:
+
+            if arg.address_space == AddressSpace.LOCAL:
+                # generally local kernel arguments are used as dynamically sized
+                # memory but you can't pass data from the host to the local arg,
+                # so there are no "reference" local arguments
+                ref_args[arg.name] = None
+                ref_arg_data.append(None)
+                continue
+
             if arg.shape is None or any(saxis is None for saxis in arg.shape):
                 raise LoopyError("array '%s' needs known shape to use automatic "
                         "testing" % arg.name)
@@ -178,14 +187,6 @@ def make_ref_args(kernel, impl_arg_info, queue, parameters):
                         ref_numpy_strides=numpy_strides,
                         needs_checking=is_output))
 
-        elif arg.arg_class is LocalArg:
-            # generally local kernel arguments are used as dynamically sized memory
-            # but you can't pass data from the host to the local arg, so there are
-            # no "reference" local arguments
-            ref_args[arg.name] = None
-            ref_arg_data.append(None)
-            pass
-
         elif arg.arg_class is TemporaryVariable:
             # global temporary, handled by invocation logic
             pass
@@ -205,7 +206,7 @@ def make_args(kernel, impl_arg_info, queue, ref_arg_data, parameters):
     import pyopencl.array as cl_array
 
     from loopy.kernel.data import ValueArg, ArrayArg, ImageArg,\
-            TemporaryVariable, ConstantArg
+            TemporaryVariable, ConstantArg, AddressSpace
 
     from pymbolic import evaluate
 
@@ -240,6 +241,11 @@ def make_args(kernel, impl_arg_info, queue, ref_arg_data, parameters):
 
         elif arg.arg_class is ArrayArg or\
                 arg.arg_class is ConstantArg:
+
+            if arg.address_space == AddressSpace.LOCAL:
+                # handled in invocation
+                continue
+
             shape = evaluate(arg.unvec_shape, parameters)
             strides = evaluate(arg.unvec_strides, parameters)
 
@@ -288,12 +294,6 @@ def make_args(kernel, impl_arg_info, queue, ref_arg_data, parameters):
             arg_desc.test_strides = strides
             arg_desc.test_numpy_strides = numpy_strides
             arg_desc.test_alloc_size = alloc_size
-
-        elif arg.arg_class is LocalArg:
-            # generally local kernel arguments are used as dynamically sized memory
-            # but you can't pass data from the host to the local arg, so there are
-            # no "reference" local arguments
-            pass
 
         elif arg.arg_class is TemporaryVariable:
             # global temporary, handled by invocation logic

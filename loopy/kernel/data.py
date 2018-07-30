@@ -397,22 +397,6 @@ def GlobalArg(*args, **kwargs):
     return ArrayArg(*args, **kwargs)
 
 
-class LocalArg(ArrayBase, KernelArgument):
-    __doc__ = ArrayBase.__doc__
-    min_target_axes = 0
-    max_target_axes = 1
-
-    def get_arg_decl(self, ast_builder, name_suffix, shape, dtype, is_written):
-        return ast_builder.get_local_arg_decl(self.name + name_suffix, shape,
-                dtype, is_written)
-
-    @property
-    def nbytes(self):
-        shape = self.shape
-        from pytools import product
-        return product(si for si in shape)*self.dtype.itemsize
-
-
 class ConstantArg(ArrayBase, KernelArgument):
     __doc__ = ArrayBase.__doc__
     min_target_axes = 0

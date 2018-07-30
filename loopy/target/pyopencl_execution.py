@@ -63,8 +63,8 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
     # {{{ handle non-numpy args
 
     def handle_non_numpy_arg(self, gen, arg):
-        from loopy.kernel.data import LocalArg
-        is_local = arg.arg_class == LocalArg
+        from loopy.kernel.data import AddressScope
+        is_local = arg.address_scope == AddressScope.LOCAL
         gen("if isinstance(%s, _lpy_np.ndarray):" % arg.name)
         with Indentation(gen):
             if is_local:
@@ -79,8 +79,8 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
         gen("elif %s is not None:" % arg.name)
         with Indentation(gen):
             if is_local:
-                gen("assert isinstance(%s, _lpy_cl.LocalMemory), 'Arguments of "
-                    "type LocalArg must either be None or an instance of a "
+                gen("assert isinstance(%s, _lpy_cl.LocalMemory), 'Arguments with "
+                    "local scope must either be None or an instance of a "
                     "pyopencl.LocalMemory object.'" % arg.name)
             else:
                 gen("_lpy_encountered_dev = True")

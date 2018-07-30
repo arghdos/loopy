@@ -2883,7 +2883,8 @@ def test_local_arg_execution(ctx_factory):
                 ... lbarrier {id=barrier, mem_kind=local, dep=init}
                 out[i0] = tmp[(i0 + 1) % 10] {id=set, dep=init:barrier}
            """,
-           [lp.LocalArg('tmp', shape=(10,), dtype=np.int32),
+           [lp.ArrayArg('tmp', address_space=AddressSpace.LOCAL, shape=(10,),
+                        dtype=np.int32),
             lp.GlobalArg('out', shape=(10,), dtype=np.int32)]
            )
 

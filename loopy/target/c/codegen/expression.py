@@ -23,7 +23,7 @@ THE SOFTWARE.
 """
 
 
-from six.moves import range, zip
+from six.moves import range
 
 import numpy as np
 
@@ -201,7 +201,7 @@ class ExpressionToCExpressionMapper(IdentityMapper):
                 var_subst_map, self.codegen_state.vectorization_info)
 
         from loopy.kernel.data import (
-                ImageArg, GlobalArg, TemporaryVariable, ConstantArg)
+                ImageArg, ArrayArg, TemporaryVariable, ConstantArg)
 
         if isinstance(ary, ImageArg):
             extra_axes = 0
@@ -234,10 +234,10 @@ class ExpressionToCExpressionMapper(IdentityMapper):
                 raise NotImplementedError(
                         "non-floating-point images not supported for now")
 
-        elif isinstance(ary, (GlobalArg, TemporaryVariable, ConstantArg)):
+        elif isinstance(ary, (ArrayArg, TemporaryVariable, ConstantArg)):
             if len(access_info.subscripts) == 0:
                 if (
-                        (isinstance(ary, (ConstantArg, GlobalArg)) or
+                        (isinstance(ary, (ConstantArg, ArrayArg)) or
                          (isinstance(ary, TemporaryVariable) and ary.base_storage))):
                     # unsubscripted global args are pointers
                     result = make_var(access_info.array_name)[0]
@@ -249,7 +249,8 @@ class ExpressionToCExpressionMapper(IdentityMapper):
 
             else:
                 subscript, = access_info.subscripts
-                result = make_var(access_info.array_name)[self.rec(subscript, 'i')]
+                result = make_var(access_info.array_name)[simplify_using_aff(
+                    self.kernel, self.rec(subscript, 'i'))]
 
             if access_info.vector_index is not None:
                 if isinstance(access_info.vector_index, tuple):

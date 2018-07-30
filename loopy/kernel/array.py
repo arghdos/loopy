@@ -923,11 +923,6 @@ class ArrayBase(ImmutableRecord):
         key_builder.rec(key_hash, self.offset)
         key_builder.rec(key_hash, self.dim_names)
 
-    @property
-    @memoize_method
-    def numpy_strides(self):
-        return tuple(self.dtype.itemsize*s for s in self.strides)
-
     def num_target_axes(self):
         target_axes = set()
         for dim_tag in self.dim_tags:
@@ -1063,11 +1058,11 @@ class ArrayBase(ImmutableRecord):
                                     full_name, stride_impl_axis),
                                 is_written=False))
 
+                space = getattr(self, 'address_space', None)
                 yield ImplementedDataInfo(
                             target=target,
                             name=full_name,
                             base_name=self.name,
-
                             arg_class=type(self),
                             dtype=dtype,
                             shape=shape,
@@ -1075,8 +1070,8 @@ class ArrayBase(ImmutableRecord):
                             unvec_shape=unvec_shape,
                             unvec_strides=tuple(unvec_strides),
                             allows_offset=bool(self.offset),
-
-                            is_written=is_written)
+                            is_written=is_written,
+                            address_space=space)
 
                 import loopy as lp
 

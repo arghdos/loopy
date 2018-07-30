@@ -51,6 +51,10 @@ class ImplementedDataInfo(ImmutableRecord):
 
     .. attribute:: arg_class
 
+    .. attribute:: address_space
+        The address-space of the array.
+        May be *None* for non-array arguments
+
     .. attribute:: base_name
 
         The user-facing name of the underlying array.
@@ -86,7 +90,7 @@ class ImplementedDataInfo(ImmutableRecord):
             unvec_shape=None, unvec_strides=None,
             offset_for_name=None, stride_for_name_and_axis=None,
             allows_offset=None,
-            is_written=None):
+            is_written=None, address_space=None):
 
         from loopy.types import LoopyType
         assert isinstance(dtype, LoopyType)
@@ -103,7 +107,8 @@ class ImplementedDataInfo(ImmutableRecord):
                 offset_for_name=offset_for_name,
                 stride_for_name_and_axis=stride_for_name_and_axis,
                 allows_offset=allows_offset,
-                is_written=is_written)
+                is_written=is_written,
+                address_space=address_space)
 
 # }}}
 
@@ -389,8 +394,8 @@ def generate_code_v2(kernel):
     :returns: a :class:`CodeGenerationResult`
     """
 
-    from loopy.kernel import kernel_state
-    if kernel.state == kernel_state.INITIAL:
+    from loopy.kernel import KernelState
+    if kernel.state == KernelState.INITIAL:
         from loopy.preprocess import preprocess_kernel
         kernel = preprocess_kernel(kernel)
 
@@ -398,7 +403,7 @@ def generate_code_v2(kernel):
         from loopy.schedule import get_one_scheduled_kernel
         kernel = get_one_scheduled_kernel(kernel)
 
-    if kernel.state != kernel_state.SCHEDULED:
+    if kernel.state != KernelState.SCHEDULED:
         raise LoopyError("cannot generate code for a kernel that has not been "
                 "scheduled")
 

@@ -150,14 +150,14 @@ class ExecutionWrapperGeneratorBase(object):
         # returning the desired integer argument.
         iarg_to_sources = {}
 
-        from loopy.kernel.data import GlobalArg, LocalArg
+        from loopy.kernel.data import ArrayArg
         from loopy.symbolic import DependencyMapper, StringifyMapper
         from loopy.diagnostic import ParameterFinderWarning
         dep_map = DependencyMapper()
 
         from pymbolic import var
         for arg in implemented_data_info:
-            if arg.arg_class in [GlobalArg, LocalArg]:
+            if arg.arg_class is ArrayArg:
                 sym_shape = var(arg.name).attr("shape")
                 for axis_nr, shape_i in enumerate(arg.shape):
                     if shape_i is None:
@@ -364,7 +364,7 @@ class ExecutionWrapperGeneratorBase(object):
             self, gen, kernel, implemented_data_info, options):
         import loopy as lp
 
-        from loopy.kernel.data import KernelArgument
+        from loopy.kernel.data import KernelArgument, AddressSpace
         from loopy.kernel.array import ArrayBase
         from loopy.symbolic import StringifyMapper
         from loopy.types import NumpyType
@@ -432,7 +432,7 @@ class ExecutionWrapperGeneratorBase(object):
 
             # {{{ allocate written arrays, if needed
 
-            if is_written and arg.arg_class in [lp.GlobalArg, lp.ConstantArg] \
+            if is_written and arg.arg_class in [lp.ArrayArg, lp.ConstantArg] \
                     and arg.shape is not None \
                     and all(si is not None for si in arg.shape):
 
@@ -455,7 +455,7 @@ class ExecutionWrapperGeneratorBase(object):
 
             # {{{ argument checking
 
-            if arg.arg_class in [lp.GlobalArg, lp.ConstantArg] \
+            if arg.arg_class in [lp.ArrayArg, lp.ConstantArg] \
                     and not options.skip_arg_checks:
                 if possibly_made_by_loopy:
                     gen("if not _lpy_made_by_loopy:")
@@ -463,104 +463,121 @@ class ExecutionWrapperGeneratorBase(object):
                     gen("if True:")
 
                 with Indentation(gen):
-                    gen("if %s.dtype != %s:"
-                            % (arg.name, self.python_dtype_str(
-                                kernel_arg.dtype.numpy_dtype)))
-                    with Indentation(gen):
-                        gen("raise TypeError(\"dtype mismatch on argument '%s' "
-                                "(got: %%s, expected: %s)\" %% %s.dtype)"
-                                % (arg.name, arg.dtype, arg.name))
-
-                    # {{{ generate shape checking code
-
-                    def strify_allowing_none(shape_axis):
-                        if shape_axis is None:
-                            return "None"
-                        else:
-                            return strify(shape_axis)
-
-                    def strify_tuple(t):
-                        if len(t) == 0:
-                            return "()"
-                        else:
-                            return "(%s,)" % ", ".join(
-                                    strify_allowing_none(sa)
-                                    for sa in t)
-
-                    shape_mismatch_msg = (
-                            "raise TypeError(\"shape mismatch on argument '%s' "
-                            "(got: %%s, expected: %%s)\" "
-                            "%% (%s.shape, %s))"
-                            % (arg.name, arg.name, strify_tuple(arg.unvec_shape)))
-
-                    if kernel_arg.shape is None:
-                        pass
-
-                    elif any(shape_axis is None for shape_axis in kernel_arg.shape):
-                        gen("if len(%s.shape) != %s:"
-                                % (arg.name, len(arg.unvec_shape)))
+                    # check for local memory
+                    if arg.address_space == AddressSpace.LOCAL:
+                        from numpy import prod
+                        # simply check that the argument size is sufficient
+                        expected_size = prod(arg.shape) * arg.dtype.itemsize
+                        gen("if %s.size < %d:" % (arg.name, expected_size))
                         with Indentation(gen):
-                            gen(shape_mismatch_msg)
+                            gen("raise TypeError(\"size mismatch on local argument "
+                                "'%s' (got: %%d bytes, expected: %d bytes)\" %% "
+                                "%s.size)" % (
+                                    arg.name, expected_size, arg.name))
+                    else:
 
-                        for i, shape_axis in enumerate(arg.unvec_shape):
+                        gen("if %s.dtype != %s:"
+                                % (arg.name, self.python_dtype_str(
+                                    kernel_arg.dtype.numpy_dtype)))
+                        with Indentation(gen):
+                            gen("raise TypeError(\"dtype mismatch on argument '%s' "
+                                    "(got: %%s, expected: %s)\" %% %s.dtype)"
+                                    % (arg.name, arg.dtype, arg.name))
+
+                        # {{{ generate shape checking code
+
+                        def strify_allowing_none(shape_axis):
                             if shape_axis is None:
-                                continue
+                                return "None"
+                            else:
+                                return strify(shape_axis)
 
-                            gen("if %s.shape[%d] != %s:"
-                                    % (arg.name, i, strify(shape_axis)))
+                        def strify_tuple(t):
+                            if len(t) == 0:
+                                return "()"
+                            else:
+                                return "(%s,)" % ", ".join(
+                                        strify_allowing_none(sa)
+                                        for sa in t)
+
+                        shape_mismatch_msg = (
+                                "raise TypeError(\"shape mismatch on argument '%s' "
+                                "(got: %%s, expected: %%s)\" "
+                                "%% (%s.shape, %s))"
+                                % (arg.name, arg.name, strify_tuple(
+                                    arg.unvec_shape)))
+
+                        if kernel_arg.shape is None:
+                            pass
+
+                        elif any(shape_axis is None
+                                for shape_axis in kernel_arg.shape):
+                            gen("if len(%s.shape) != %s:"
+                                    % (arg.name, len(arg.unvec_shape)))
                             with Indentation(gen):
                                 gen(shape_mismatch_msg)
 
-                    else:  # not None, no Nones in tuple
-                        gen("if %s.shape != %s:"
-                                % (arg.name, strify(arg.unvec_shape)))
-                        with Indentation(gen):
-                            gen(shape_mismatch_msg)
+                            for i, shape_axis in enumerate(arg.unvec_shape):
+                                if shape_axis is None:
+                                    continue
 
-                    # }}}
+                                gen("if %s.shape[%d] != %s:"
+                                        % (arg.name, i, strify(shape_axis)))
+                                with Indentation(gen):
+                                    gen(shape_mismatch_msg)
 
-                    if arg.unvec_strides and kernel_arg.dim_tags:
-                        itemsize = kernel_arg.dtype.numpy_dtype.itemsize
-                        sym_strides = tuple(
-                                itemsize*s_i for s_i in arg.unvec_strides)
+                        else:  # not None, no Nones in tuple
+                            gen("if %s.shape != %s:"
+                                    % (arg.name, strify(arg.unvec_shape)))
+                            with Indentation(gen):
+                                gen(shape_mismatch_msg)
 
-                        ndim = len(arg.unvec_shape)
-                        shape = ["_lpy_shape_%d" % i for i in range(ndim)]
-                        strides = ["_lpy_stride_%d" % i for i in range(ndim)]
+                        # }}}
 
-                        gen("(%s,) = %s.shape" % (", ".join(shape), arg.name))
-                        gen("(%s,) = %s.strides" % (", ".join(strides), arg.name))
+                        if arg.unvec_strides and kernel_arg.dim_tags:
+                            itemsize = kernel_arg.dtype.numpy_dtype.itemsize
+                            sym_strides = tuple(
+                                    itemsize*s_i for s_i in arg.unvec_strides)
 
-                        gen("if not %s:"
-                                % self.get_strides_check_expr(
-                                    shape, strides,
-                                    (strify(s) for s in sym_strides)))
-                        with Indentation(gen):
-                            gen("_lpy_got = tuple(stride "
-                                    "for (dim, stride) in zip(%s.shape, %s.strides) "
-                                    "if dim > 1)"
-                                    % (arg.name, arg.name))
-                            gen("_lpy_expected = tuple(stride "
-                                    "for (dim, stride) in zip(%s.shape, %s) "
-                                    "if dim > 1)"
-                                    % (arg.name, strify_tuple(sym_strides)))
+                            ndim = len(arg.unvec_shape)
+                            shape = ["_lpy_shape_%d" % i for i in range(ndim)]
+                            strides = ["_lpy_stride_%d" % i for i in range(ndim)]
 
-                            gen("raise TypeError(\"strides mismatch on "
-                                    "argument '%s' "
-                                    "(after removing unit length dims, "
-                                    "got: %%s, expected: %%s)\" "
-                                    "%% (_lpy_got, _lpy_expected))"
-                                    % arg.name)
+                            gen("(%s,) = %s.shape" % (", ".join(shape), arg.name))
+                            gen("(%s,) = %s.strides" % (
+                                ", ".join(strides), arg.name))
 
-                    if not arg.allows_offset:
-                        gen("if hasattr(%s, 'offset') and %s.offset:" % (
-                                arg.name, arg.name))
-                        with Indentation(gen):
-                            gen("raise ValueError(\"Argument '%s' does not "
-                                    "allow arrays with offsets. Try passing "
-                                    "default_offset=loopy.auto to make_kernel()."
-                                    "\")" % arg.name)
-                            gen("")
+                            gen("if not %s:"
+                                    % self.get_strides_check_expr(
+                                        shape, strides,
+                                        (strify(s) for s in sym_strides)))
+                            with Indentation(gen):
+                                gen("_lpy_got = tuple(stride "
+                                        "for (dim, stride) in "
+                                        "zip(%s.shape, %s.strides) "
+                                        "if dim > 1)"
+                                        % (arg.name, arg.name))
+                                gen("_lpy_expected = tuple(stride "
+                                        "for (dim, stride) in zip(%s.shape, %s) "
+                                        "if dim > 1)"
+                                        % (arg.name, strify_tuple(sym_strides)))
+
+                                gen("raise TypeError(\"strides mismatch on "
+                                        "argument '%s' "
+                                        "(after removing unit length dims, "
+                                        "got: %%s, expected: %%s)\" "
+                                        "%% (_lpy_got, _lpy_expected))"
+                                        % arg.name)
+
+                        if not arg.allows_offset:
+                            gen("if hasattr(%s, 'offset') and %s.offset:" % (
+                                    arg.name, arg.name))
+                            with Indentation(gen):
+                                gen("raise ValueError(\"Argument '%s' does not "
+                                        "allow arrays with offsets. Try passing "
+                                        "default_offset=loopy.auto to make_kernel()."
+                                        "\")" % arg.name)
+                                gen("")
 
             # }}}
 
@@ -568,7 +585,7 @@ class ExecutionWrapperGeneratorBase(object):
                 gen("del _lpy_made_by_loopy")
                 gen("")
 
-            if arg.arg_class in [lp.GlobalArg, lp.ConstantArg]:
+            if arg.arg_class in [lp.ArrayArg, lp.ConstantArg]:
                 args.append(self.get_arg_pass(arg))
             else:
                 args.append("%s" % arg.name)

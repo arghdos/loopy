@@ -63,8 +63,8 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
     # {{{ handle non-numpy args
 
     def handle_non_numpy_arg(self, gen, arg):
-        from loopy.kernel.data import LocalArg
-        is_local = arg.arg_class == LocalArg
+        from loopy.kernel.data import AddressSpace
+        is_local = arg.address_space == AddressSpace.LOCAL
         gen("if isinstance(%s, _lpy_np.ndarray):" % arg.name)
         with Indentation(gen):
             if is_local:
@@ -79,18 +79,11 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
         gen("elif %s is not None:" % arg.name)
         with Indentation(gen):
             if is_local:
-                gen("assert isinstance(%s, _lpy_cl.LocalMemory), 'Arguments of "
-                    "type LocalArg must either be None or an instance of a "
+                gen("assert isinstance(%s, _lpy_cl.LocalMemory), 'Arguments with "
+                    "local scope must either be None or an instance of a "
                     "pyopencl.LocalMemory object.'" % arg.name)
             else:
                 gen("_lpy_encountered_dev = True")
-        if is_local:
-            from numpy import prod
-            gen('else:')
-            with Indentation(gen):
-                gen('# create a properly sized LocalMemory object')
-                gen('%s = _lpy_cl.LocalMemory(%d)' % (
-                    arg.name, prod(arg.shape) * arg.dtype.itemsize))
 
         gen("")
 
@@ -103,6 +96,15 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
         Handle allocation of non-specified arguements for pyopencl execution
         """
         from pymbolic import var
+        from loopy.kernel.data import AddressSpace
+
+        if arg.address_space == AddressSpace.LOCAL:
+            # handle local argument allocations
+            from numpy import prod
+            gen('# create a properly sized LocalMemory object')
+            gen('%s = _lpy_cl.LocalMemory(%d)' % (
+                arg.name, prod(arg.shape) * arg.dtype.itemsize))
+            return
 
         num_axes = len(arg.strides)
         for i in range(num_axes):
@@ -178,9 +180,9 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
                 """)
 
             gen("")
-            from loopy.kernel.data import GlobalArg
+            from loopy.kernel.data import ArrayArg
             for arg in implemented_data_info:
-                if issubclass(arg.arg_class, GlobalArg):
+                if issubclass(arg.arg_class, ArrayArg):
                     gen(
                             "wait_for.extend({arg_name}.events)"
                             .format(arg_name=arg.name))
@@ -197,9 +199,9 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
 
         if kernel.options.cl_exec_manage_array_events:
             gen("")
-            from loopy.kernel.data import GlobalArg
+            from loopy.kernel.data import ArrayArg
             for arg in implemented_data_info:
-                if (issubclass(arg.arg_class, GlobalArg)
+                if (issubclass(arg.arg_class, ArrayArg)
                         and arg.base_name in kernel.get_written_variables()):
                     gen("{arg_name}.add_event(_lpy_evt)".format(arg_name=arg.name))
 
@@ -210,7 +212,7 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
     def generate_output_handler(
             self, gen, options, kernel, implemented_data_info):
 
-        from loopy.kernel.data import KernelArgument
+        from loopy.kernel.data import KernelArgument, AddressSpace
 
         if not options.no_numpy:
             gen("if out_host is None and (_lpy_encountered_numpy "
@@ -223,6 +225,9 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
                 gen("pass")  # if no outputs (?!)
                 for arg in implemented_data_info:
                     if not issubclass(arg.arg_class, KernelArgument):
+                        continue
+                    elif arg.address_space == AddressSpace.LOCAL:
+                        # local memory doesn't have a .get()
                         continue
 
                     is_written = arg.base_name in kernel.get_written_variables()
@@ -254,7 +259,9 @@ class PyOpenCLExecutionWrapperGenerator(ExecutionWrapperGeneratorBase):
         gen.add_to_preamble(codegen_result.host_code())
 
     def get_arg_pass(self, arg):
-        return "%s.base_data" % arg.name
+        from loopy.kernel.data import AddressSpace
+        is_local = arg.address_space == AddressSpace.LOCAL
+        return "%s%s" % (arg.name, '.base_data' if not is_local else '')
 
 # }}}
 

@@ -320,8 +320,10 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
                     lhs_dtype = codegen_state.expression_to_code_mapper.infer_type(
                         ast.lvalue.expr)
                     if not lhs_dtype.is_integral():
-                        # the necessary dtype is the integer version of the floating
-                        # point type (e.g., float64 -> int64)
+                        # in OpenCL, the dtype of the conditional in a select call
+                        # must be an integer of the same 'bitness' as the dtype of
+                        # the conditional (https://www.khronos.org/registry/OpenCL/sdk/1.0/docs/man/xhtml/select.html)  # noqa
+                        # (e.g., float64 -> int64)
                         from loopy.types import to_loopy_type
                         import numpy as np
                         lhs_dtype = to_loopy_type(

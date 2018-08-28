@@ -261,9 +261,15 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
         cur_ast = inner.current_ast(codegen_state)
         method = codegen_state.ast_builder.emit_if
 
-        def condition_mapper(ast=None, type_context=None, needed_dtype=None):
+        def condition_mapper(ast=None, type_context=None, needed_dtype=None,
+                             condition=None):
+            if condition is not None:
+                # explicit vectorization override
+                pass
+            else:
+                condition = LogicalAnd(tuple(condition_exprs))
             return codegen_state.expression_to_code_mapper(
-                    LogicalAnd(tuple(condition_exprs)), PREC_NONE,
+                    condition, PREC_NONE,
                     type_context=type_context, needed_dtype=needed_dtype)
         mapper = condition_mapper
 
@@ -301,37 +307,59 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
 
                     # get the default condition to check for vectorizability
                     check = condition_mapper()
-                    from loopy.diagnostic import LoopyError
-                    deps = set()
-                    try:
-                        for c in check.expr.children:
-                            deps |= get_dependencies(c)
-
-                        if deps & set([vec_iname]):
-                            # we'd have to insert our own mirror temporary of the
-                            # vector iname here
-                            raise LoopyError("Can't directly use vector iname in "
-                                             "conditional")
-                    except (AttributeError, TypeError):
-                        pass
 
                     # get LHS dtype for (potential) casting of condition
                     from loopy.expression import dtype_to_type_context
                     lhs_dtype = codegen_state.expression_to_code_mapper.infer_type(
                         ast.lvalue.expr)
                     if not lhs_dtype.is_integral():
-                        # the necessary dtype is the integer version of the floating
-                        # point type (e.g., float64 -> int64)
+                        # in OpenCL, the dtype of the conditional in a select call
+                        # must be an integer of the same 'bitness' as the dtype of
+                        # the conditional (https://www.khronos.org/registry/OpenCL/sdk/1.0/docs/man/xhtml/select.html)  # noqa
+                        # (e.g., float64 -> int64)
                         from loopy.types import to_loopy_type
                         import numpy as np
                         lhs_dtype = to_loopy_type(
                             np.dtype('i%d' % lhs_dtype.itemsize),
                             lhs_dtype.target)
-
                     type_context = dtype_to_type_context(codegen_state.kernel.target,
                         lhs_dtype)
+
+                    from loopy.symbolic import VectorTypeCast
+                    from loopy.types import to_loopy_type
+                    from pymbolic.primitives import Variable
+                    from pymbolic.mapper.substitutor import substitute
+                    import numpy as np
+                    kwargs = {}
+                    deps = set()
+                    try:
+                        for c in check.expr.children:
+                            deps |= get_dependencies(c)
+
+                        if deps & set([vec_iname]):
+                            # we have to insert our own temporary version of the
+                            # vector iname here
+                            # first, determine the dtype
+                            size = lhs_dtype.itemsize
+                            np_dtype = np.dtype('i%d' % lhs_dtype.itemsize)
+                            dtype = codegen_state.kernel.target.\
+                                get_dtype_registry().dtype_to_ctype(
+                                    to_loopy_type(np_dtype,
+                                    target=codegen_state.kernel.target))
+                            name = '%s%d' % (dtype, size)
+                            # next, get the base of a vector temporary
+                            init = range(size)
+                            # finally, put in a vextor typecast
+                            temp_iname = VectorTypeCast(np_dtype, init, name)
+                            kwargs['condition'] = substitute(
+                                check.expr, {Variable(vec_iname): temp_iname})
+
+                    except (AttributeError, TypeError):
+                        pass
+
                     return condition_mapper(
-                        type_context=type_context, needed_dtype=lhs_dtype)
+                        type_context=type_context, needed_dtype=lhs_dtype,
+                        **kwargs)
 
                 method = codegen_state.ast_builder.emit_vector_if
                 mapper = condition_mapper_wrapper

@@ -75,6 +75,8 @@ class IdentityMapperMixin(object):
     def map_array_literal(self, expr, *args):
         return type(expr)(tuple(self.rec(ch, *args) for ch in expr.children))
 
+    map_vector_literal = map_array_literal
+
     def map_group_hw_index(self, expr, *args):
         return expr
 
@@ -110,6 +112,7 @@ class IdentityMapperMixin(object):
         return type(expr)(expr.type, self.rec(expr.child), **kwargs)
 
     map_type_cast = map_type_annotation
+    map_vector_type_cast = map_type_annotation
 
     map_linear_subscript = IdentityMapperBase.map_subscript
 
@@ -140,6 +143,8 @@ class WalkMapper(WalkMapperBase):
         for ch in expr.children:
             self.rec(ch, *args)
 
+    map_vector_literal = map_array_literal
+
     def map_group_hw_index(self, expr, *args):
         self.visit(expr)
 
@@ -157,6 +162,7 @@ class WalkMapper(WalkMapperBase):
             return
         self.rec(expr.child, *args)
 
+    map_vector_type_cast = map_type_cast
     map_tagged_variable = WalkMapperBase.map_variable
 
     def map_loopy_function_identifier(self, expr, *args):
@@ -196,6 +202,10 @@ class StringifyMapper(StringifyMapperBase):
     def map_array_literal(self, expr, *args):
         return "{%s}" % ", ".join(self.rec(ch) for ch in expr.children)
 
+    def map_vector_literal(self, expr, *args):
+        from pymbolic.mapper.stringifier import PREC_NONE
+        return "(%s)" % ", ".join(self.rec(ch, PREC_NONE) for ch in expr.children)
+
     def map_group_hw_index(self, expr, enclosing_prec):
         return "grp.%d" % expr.index
 
@@ -232,6 +242,11 @@ class StringifyMapper(StringifyMapperBase):
     def map_type_cast(self, expr, enclosing_prec):
         from pymbolic.mapper.stringifier import PREC_NONE
         return "cast(%s, %s)" % (repr(expr.type), self.rec(expr.child, PREC_NONE))
+
+    def map_vector_type_cast(self, expr, enclosing_prec):
+        from pymbolic.mapper.stringifier import PREC_NONE
+        return "cast(%s, %s)" % (repr(expr.type_name), self.rec(
+            expr.child, PREC_NONE))
 
 
 class UnidirectionalUnifier(UnidirectionalUnifierBase):
@@ -290,8 +305,13 @@ class DependencyMapper(DependencyMapperBase):
     def map_type_cast(self, expr):
         return self.rec(expr.child)
 
+    map_vector_type_cast = map_type_cast
+
     def map_literal(self, expr):
         return set()
+
+    def map_vector_literal(self, expr):
+        return self.combine(self.rec(child) for child in expr.children)
 
 
 class SubstitutionRuleExpander(IdentityMapper):
@@ -367,6 +387,25 @@ class ArrayLiteral(p.Leaf):
     init_arg_names = ("children",)
 
     mapper_method = "map_array_literal"
+
+
+class VectorLiteral(p.Leaf):
+    """An vector dtype literal."""
+
+    # Currently only in conjunction with the VectorTypeCast
+
+    def __init__(self, children):
+        self.children = children
+
+    def stringifier(self):
+        return StringifyMapper
+
+    def __getinitargs__(self):
+        return (self.children,)
+
+    init_arg_names = ("children",)
+
+    mapper_method = "map_vector_literal"
 
 
 class HardwareAxisIndex(p.Leaf):
@@ -477,6 +516,62 @@ class TypeCast(p.Expression):
         return StringifyMapper
 
     mapper_method = intern("map_type_cast")
+
+
+class VectorTypeCast(p.Expression):
+    """
+    A workaround for casts of vector temporaries, e.g.:
+        (int4)(0, 1, 2, 3)
+
+    Useful for inserting temporaries into expressions to avoid unvectorizable code
+
+    .. attribute:: type
+
+        The (non-vector) numpy type to cast to. e.g., if using 'int4', the type
+        would be np.int32
+
+    .. attribute:: child
+
+        The :class:`VectorLiteral` initializer list to convert to via typecast
+
+    .. attribute:: type_name
+
+        The stringified type (including vector size), e.g., 'int4'
+    """
+
+    def __init__(self, type, init, type_name):
+        super(VectorTypeCast, self).__init__()
+
+        from loopy.types import to_loopy_type, NumpyType
+        type = to_loopy_type(type)
+
+        if (not isinstance(type, NumpyType)
+                or not issubclass(type.dtype.type, np.number)):
+            from loopy.diagnostic import LoopyError
+            raise LoopyError("TypeCast only supports numerical numpy types, "
+                    "not '%s'" % type)
+
+        # We're storing the type as a name for now to avoid
+        # numpy pickling bug madness. (see loopy.types)
+        self.type_name = type_name
+        self.child = VectorLiteral(tuple(s for s in init))
+        self._base_type = type.dtype
+
+    @property
+    def type(self):
+        from loopy.types import NumpyType
+        return NumpyType(self._base_type)
+
+    # init_arg_names is a misnomer--they're attribute names used for pickling.
+    init_arg_names = ("type_name", "child", "_base_type")
+
+    def __getinitargs__(self):
+        return (self.type_name, self.child, self._base_type)
+
+    def stringifier(self):
+        return StringifyMapper
+
+    mapper_method = intern("map_vector_type_cast")
 
 
 class TaggedVariable(p.Variable):
@@ -1741,6 +1836,8 @@ class BatchedAccessRangeMapper(WalkMapper):
 
     def map_type_cast(self, expr, inames):
         return self.rec(expr.child, inames)
+
+    map_vector_type_cast = map_type_cast
 
 
 class AccessRangeMapper(object):

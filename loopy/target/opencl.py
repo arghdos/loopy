@@ -327,6 +327,9 @@ class ExpressionToOpenCLCExpressionMapper(ExpressionToCExpressionMapper):
     def map_local_hw_index(self, expr, type_context):
         return var("lid")(expr.axis)
 
+    def map_vector_literal(self, expr, type_context):
+        return var(', '.join('%s' % x for x in expr.children))
+
     def map_comparison(self, expr, type_context):
         from loopy.symbolic import get_dependencies
         from loopy.kernel.data import VectorizeTag, filter_iname_tags_by_type

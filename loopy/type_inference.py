@@ -243,6 +243,11 @@ class TypeInferenceMapper(CombineMapper):
             raise LoopyError("Can't cast a '%s' to '%s'" % (subtype, expr.type))
         return [expr.type]
 
+    map_vector_type_cast = map_type_cast
+
+    def map_vector_literal(self, expr):
+        return self.combine([self.rec(child) for child in expr.children])
+
     def map_subscript(self, expr):
         return self.rec(expr.aggregate)
 

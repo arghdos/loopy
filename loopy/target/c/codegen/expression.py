@@ -380,6 +380,10 @@ class ExpressionToCExpressionMapper(IdentityMapper):
         cast = var("(%s)" % registry.dtype_to_ctype(expr.type))
         return cast(self.rec(expr.child, type_context))
 
+    def map_vector_type_cast(self, expr, type_context):
+        cast = var("(%s)" % expr.type_name)
+        return cast(self.rec(expr.child, type_context))
+
     def map_constant(self, expr, type_context):
         if isinstance(expr, (complex, np.complexfloating)):
             try:
@@ -934,6 +938,9 @@ class CExpressionToCodeMapper(RecursiveMapper):
 
     def map_array_literal(self, expr, enclosing_prec):
         return "{ %s }" % self.join_rec(", ", expr.children, PREC_NONE)
+
+    def map_vector_literal(self, expr, enclosing_prec):
+        return "( %s )" % self.join_rec(", ", expr.children, PREC_NONE)
 
 # }}}
 

@@ -3041,8 +3041,7 @@ def test_explicit_simd_selects(ctx_factory):
     c_ans = np.ones(12, dtype=np.int32)
     c_ans[7:] = 0
     create_and_test('a[i] = 1\nc[i] = 0', '(b[i] > 6)', (ans, c_ans), b=np.arange(
-        12, dtype=np.int32).reshape((3, 4)), c=np.ones((3, 4), dtype=np.int32),
-        debug=True)
+        12, dtype=np.int32).reshape((3, 4)), c=np.ones((3, 4), dtype=np.int32))
     # 6) test a negated conditional
     ans_negated = np.invert(ans) + 2
     create_and_test('a[i] = 1', 'not (b[i] > 6)', ans_negated, b=np.arange(

@@ -88,6 +88,11 @@ class CodeGenerationResult(ImmutableRecord):
 
         a list of :class:`loopy.codegen.ImplementedDataInfo` objects.
         Only added at the very end of code generation.
+
+    .. attribute:: vectorize_failed
+
+        If True, the currently generated instructions are in the unrolled failed
+        vectorization state (i.e., 'unvectorize')
     """
 
     @staticmethod
@@ -100,12 +105,12 @@ class CodeGenerationResult(ImmutableRecord):
         if codegen_state.is_generating_device_code:
             kwargs = {
                     "host_program": None,
-                    "device_programs": [prg],
+                    "device_programs": [prg]
                     }
         else:
             kwargs = {
                     "host_program": prg,
-                    "device_programs": [],
+                    "device_programs": []
                     }
 
         return CodeGenerationResult(
@@ -254,7 +259,11 @@ def merge_codegen_results(codegen_state, elements, collapse=True):
                 **kwargs))
 
 
-def wrap_in_if(codegen_state, condition_exprs, inner):
+def wrap_in_if(codegen_state, condition_exprs, inner, is_vectorized=False):
+    """
+    :param:`is_vectorized` indicates whether the generated AST was successfully
+        vectorized, or whether it was fed through unvectorize
+    """
     if condition_exprs:
         from pymbolic.primitives import LogicalAnd
         from pymbolic.mapper.stringifier import PREC_NONE
@@ -273,7 +282,7 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
                     type_context=type_context, needed_dtype=needed_dtype)
         mapper = condition_mapper
 
-        if codegen_state.vectorization_info is not None:
+        if codegen_state.vectorization_info is not None and is_vectorized:
             from loopy.symbolic import get_dependencies
             from loopy.kernel.array import VectorArrayDimTag
             from loopy.kernel.data import ValueArg
@@ -363,6 +372,7 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
                         type_context=type_context, needed_dtype=lhs_dtype,
                         **kwargs)
 
+                # mark as vector predicates
                 method = codegen_state.ast_builder.emit_vector_if
                 mapper = condition_mapper_wrapper
 

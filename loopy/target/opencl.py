@@ -625,11 +625,14 @@ class OpenCLCASTBuilder(CASTBuilder):
                     vec_if = Block(vec_if)
             except AttributeError:
                 vec_if = False
-        if not vec_if:
-            raise LoopyError(
-                "Vector conditionals can only be generated for simple "
-                "assign statements, condition (%s) on instruction (%s) "
-                "invalid" % (str(condition_mapper()), str(ast)))
+        if not vec_if and isinstance(ast, Block):
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info('Cannot convert non-simple assign statement for instruction '
+                        '(%s) to vectorized conditional. '
+                        'Assuming that this is the result of a previous unvectorize '
+                        'call.')
+            return ast
 
         return vec_if
 

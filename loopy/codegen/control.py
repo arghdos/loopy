@@ -510,11 +510,12 @@ def build_loop_nest(codegen_state, schedule_index):
                                 pred_chk for pred_chk in pred_checks]
 
                     prev_result = prev_gen_code(inner_codegen_state)
-
                     inner = merge_codegen_results(codegen_state, prev_result)
                     return [new_codegen_state.try_vectorized(
                         inner.current_ast(inner_codegen_state),
-                        lambda ics: wrap_in_if(ics, condition_exprs, inner))]
+                        lambda ics, **kwargs: wrap_in_if(
+                            ics, condition_exprs, inner, **kwargs),
+                        vector_kwargs={'is_vectorized': True})]
 
                 cannot_vectorize = False
                 if new_codegen_state.vectorization_info is not None:

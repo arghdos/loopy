@@ -3128,6 +3128,41 @@ def test_explicit_vector_dtype_conversion(ctx_factory, lhs_dtype, rhs_dtype):
                   """)
 
 
+def test_explicit_simd_vector_iname_in_conditional(ctx_factory):
+    ctx = ctx_factory()
+
+    def create_and_test(insn, answer, debug=False):
+        knl = lp.make_kernel(['{[i]: 0 <= i < 12}', '{[j]: 0 <= j < 1}'],
+                             insn,
+                             [lp.GlobalArg('a', shape=(1, 12,), dtype=np.int32),
+                              lp.GlobalArg('b', shape=(1, 12,), dtype=np.int32)])
+
+        knl = lp.split_iname(knl, 'i', 4, inner_tag='vec')
+        knl = lp.tag_inames(knl, [('j', 'g.0')])
+        knl = lp.split_array_axis(knl, ['a', 'b'], 1, 4)
+        knl = lp.tag_array_axes(knl, ['a', 'b'], 'N1,N0,vec')
+
+        # ensure we can generate code
+        code = lp.generate_code_v2(knl).device_code()
+        if debug:
+            print(code)
+        # and check answer
+        queue = cl.CommandQueue(ctx)
+        a = np.zeros((1, 3, 4), dtype=np.int32)
+        b = np.arange(12, dtype=np.int32).reshape((1, 3, 4))
+        result = knl(queue, a=a, b=b)[1][0]
+
+        assert np.array_equal(result.flatten('C'), answer)
+
+    ans = np.arange(12, dtype=np.int32)
+    ans[:7] = 0
+    create_and_test("""
+        if i >= 7
+            a[j, i] = b[j, i]
+        end
+    """, ans)
+
+
 def test_vectorizability():
     # check new vectorizability conditions
     from loopy.kernel.array import VectorArrayDimTag

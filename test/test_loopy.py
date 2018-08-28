@@ -3025,7 +3025,7 @@ def test_explicit_simd_selects(ctx_factory):
     from loopy.diagnostic import LoopyError
     # 1) test a conditional on a vector iname -- currently unimplemented as it
     # would require creating a 'shadow' vector iname temporary
-    create_and_test('a[i] = 1', 'i > 6', ans, exception=LoopyError)
+    create_and_test('a[i] = 1', 'i > 6', ans)
     # 2) condition on a vector array
     create_and_test('a[i] = 1', 'b[i] > 6', ans, b=np.arange(
         12, dtype=np.int32).reshape((3, 4)))

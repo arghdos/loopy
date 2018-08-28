@@ -339,13 +339,15 @@ def wrap_in_if(codegen_state, condition_exprs, inner):
                         if deps & set([vec_iname]):
                             # we have to insert our own temporary version of the
                             # vector iname here
-                            # first, determine the dtype
-                            size = lhs_dtype.itemsize
+                            # get the vector size
+                            size = codegen_state.vectorization_info.length
+                            # determine the dtype
                             np_dtype = np.dtype('i%d' % lhs_dtype.itemsize)
                             dtype = codegen_state.kernel.target.\
                                 get_dtype_registry().dtype_to_ctype(
                                     to_loopy_type(np_dtype,
                                     target=codegen_state.kernel.target))
+                            # get the string form
                             name = '%s%d' % (dtype, size)
                             # next, get the base of a vector temporary
                             init = range(size)

@@ -3128,14 +3128,15 @@ def test_explicit_vector_dtype_conversion(ctx_factory, lhs_dtype, rhs_dtype):
                   """)
 
 
-def test_explicit_simd_vector_iname_in_conditional(ctx_factory):
+@pytest.mark.parametrize(('dtype'), [np.int32, np.int64, np.float32, np.float64])
+def test_explicit_simd_vector_iname_in_conditional(ctx_factory, dtype):
     ctx = ctx_factory()
 
     def create_and_test(insn, answer, debug=False):
         knl = lp.make_kernel(['{[i]: 0 <= i < 12}', '{[j]: 0 <= j < 1}'],
                              insn,
-                             [lp.GlobalArg('a', shape=(1, 12,), dtype=np.int32),
-                              lp.GlobalArg('b', shape=(1, 12,), dtype=np.int32)])
+                             [lp.GlobalArg('a', shape=(1, 12,), dtype=dtype),
+                              lp.GlobalArg('b', shape=(1, 12,), dtype=dtype)])
 
         knl = lp.split_iname(knl, 'i', 4, inner_tag='vec')
         knl = lp.tag_inames(knl, [('j', 'g.0')])
@@ -3148,8 +3149,8 @@ def test_explicit_simd_vector_iname_in_conditional(ctx_factory):
             print(code)
         # and check answer
         queue = cl.CommandQueue(ctx)
-        a = np.zeros((1, 3, 4), dtype=np.int32)
-        b = np.arange(12, dtype=np.int32).reshape((1, 3, 4))
+        a = np.zeros((1, 3, 4), dtype=dtype)
+        b = np.arange(12, dtype=dtype).reshape((1, 3, 4))
         result = knl(queue, a=a, b=b)[1][0]
 
         assert np.array_equal(result.flatten('C'), answer)

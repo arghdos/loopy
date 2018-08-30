@@ -3165,14 +3165,17 @@ def test_explicit_vector_dtype_conversion(ctx_factory, lhs_dtype, rhs_dtype):
                   """)
 
 
-@pytest.mark.parametrize(('dtype'), [np.int32, np.int64, np.float32, np.float64])
-def test_explicit_simd_vector_iname_in_conditional(ctx_factory, dtype):
+@pytest.mark.parametrize('dtype', [np.int32, np.int64, np.float32, np.float64])
+@pytest.mark.parametrize('vec_width', [2, 3, 4, 8, 16])
+def test_explicit_simd_vector_iname_in_conditional(ctx_factory, dtype, vec_width):
     ctx = ctx_factory()
 
-    def create_and_test(insn, answer, shape=(1, 12), debug=False,
+    size = vec_width * 4
+
+    def create_and_test(insn, answer, shape=(1, size), debug=False,
                         vectors=['a', 'b']):
         num_conditions = shape[0]
-        knl = lp.make_kernel(['{[i]: 0 <= i < 12}',
+        knl = lp.make_kernel(['{{[i]: 0 <= i < {}}}'.format(size),
                               '{{[j]: 0 <= j < {}}}'.format(num_conditions)],
                              insn,
                              [lp.GlobalArg('a', shape=shape, dtype=dtype),
@@ -3198,7 +3201,7 @@ def test_explicit_simd_vector_iname_in_conditional(ctx_factory, dtype):
 
         assert np.array_equal(result.flatten('C'), answer)
 
-    ans = np.arange(12, dtype=np.int32)
+    ans = np.arange(size, dtype=np.int32)
     ans[:7] = 0
     create_and_test("""
         if i >= 7
@@ -3210,13 +3213,13 @@ def test_explicit_simd_vector_iname_in_conditional(ctx_factory, dtype):
     # this tests that we are properly able to unwind any vectorized conditional that
     # has been applied, and then reapply the correct scalar conditional in
     # unvectorize
-    ans = np.arange(144, dtype=np.int32)
+    ans = np.arange(12 * size, dtype=np.int32)
     ans[:7] = 0
     create_and_test("""
         if j * 12 + i >= 7
             a[j, i] = b[j, i]
         end
-    """, ans, shape=(12, 12), vectors=['b'])
+    """, ans, shape=(12, size), vectors=['b'])
 
 
 def test_vectorizability():

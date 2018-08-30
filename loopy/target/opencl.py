@@ -340,10 +340,12 @@ class ExpressionToOpenCLCExpressionMapper(ExpressionToCExpressionMapper):
                           if filter_iname_tags_by_type(tags, VectorizeTag)])
 
         if get_dependencies(expr) & vec_inames and \
-                self.codegen_state.insn_was_not_vectorizable:
-            raise LoopyError("Cannot unroll a vector-iname comparison, as scalar"
-                             " assignment results in incorrect 'truthiness' for "
-                             " vector dtypes.")
+               self.codegen_state.insn_was_not_vectorizable:
+            from loopy.diagnostic import warn_with_kernel
+            warn_with_kernel(self.codegen_state.kernel,
+                             'unrolled_vector_iname_conditional',
+                             'Unrolled vector-loop iname detected in vector ' +
+                             'comparison; this may in unexpected truth-values.')
 
         return super(ExpressionToOpenCLCExpressionMapper, self).map_comparison(
             expr, type_context)
@@ -631,11 +633,14 @@ class OpenCLCASTBuilder(CASTBuilder):
                     vec_if = Block(vec_if)
             except AttributeError:
                 vec_if = False
-        if not vec_if:
-            raise LoopyError(
-                "Vector conditionals can only be generated for simple "
-                "assign statements, condition (%s) on instruction (%s) "
-                "invalid" % (str(condition_mapper()), str(ast)))
+        if not vec_if and isinstance(ast, Block):
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info('Cannot convert non-simple assign statement for instruction '
+                        '(%s) to vectorized conditional. '
+                        'Assuming that this is the result of a previous unvectorize '
+                        'call.')
+            return ast
 
         return vec_if
 

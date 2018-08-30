@@ -2869,6 +2869,44 @@ def test_explicit_simd_shuffles(ctx_factory):
                         answer, True)
 
 
+def test_explicit_simd_unr_iname(ctx_factory):
+    """
+    tests as scatter load to a specific lane of a vector array via an unrolled iname
+    """
+    ctx = ctx_factory()
+    queue = cl.CommandQueue(ctx)
+
+    insns = """
+        for j
+            for i
+                for lane
+                    a[j, i, lane] = b[j + lane, i]
+                end
+            end
+        end
+        """
+    dtype = np.int32
+    knl = lp.make_kernel(
+        ['{[j]: 0 <= j < 9}', '{[i]: 0 <= i < 3}', '{[lane]: 0 <= lane < 4}'],
+        insns,
+        [lp.GlobalArg('a', shape=(12, 3, 4), dtype=dtype),
+         lp.GlobalArg('b', shape=(12, 12), dtype=dtype)])
+
+    knl = lp.tag_array_axes(knl, 'a', 'N1,N0,vec')
+    knl = lp.tag_inames(knl, {'lane': 'unr'})
+    knl = lp.prioritize_loops(knl, 'j, i, lane')
+    knl = lp.preprocess_kernel(knl)
+
+    b = np.arange(144, dtype=dtype).reshape((12, 12))
+    a = knl(queue, b=b, a=np.zeros((12, 3, 4), dtype=dtype))[1][0]
+
+    ans = np.tile(np.arange(4, dtype=dtype), int(144 / 4)).reshape((12, 3, 4))
+    ans[:9] = (ans[:9] + np.arange(9)[:, np.newaxis, np.newaxis]) * 12
+    ans[:9] = (ans[:9] + np.arange(3)[np.newaxis, :, np.newaxis])
+    ans[9:] = 0
+    assert np.array_equal(a, ans)
+
+
 def test_explicit_simd_temporary_promotion(ctx_factory):
     from loopy.kernel.data import temp_var_scope as scopes
 
@@ -2971,7 +3009,7 @@ def test_explicit_simd_selects(ctx_factory):
     ctx = ctx_factory()
 
     def create_and_test(insn, condition, answer, exception=None, a=None, b=None,
-                        extra_insns=None, c=None, v=None, check=None):
+                        extra_insns=None, c=None, v=None, check=None, debug=False):
         a = np.zeros((3, 4), dtype=np.int32) if a is None else a
         data = [lp.GlobalArg('a', shape=(12,), dtype=a.dtype)]
         kwargs = dict(a=a)
@@ -3016,32 +3054,31 @@ def test_explicit_simd_selects(ctx_factory):
         else:
             if not isinstance(answer, tuple):
                 answer = (answer,)
+            if debug:
+                print(lp.generate_code_v2(knl).device_code())
             result = knl(queue, **kwargs)[1]
             for r, a in zip(result, answer):
                 assert np.array_equal(r.flatten('C'), a)
 
     ans = np.zeros(12, dtype=np.int32)
     ans[7:] = 1
-    from loopy.diagnostic import LoopyError
-    # 1) test a conditional on a vector iname -- currently unimplemented as it
-    # would require creating a 'shadow' vector iname temporary
+    # 1) test a conditional on a vector iname
     create_and_test('a[i] = 1', 'i > 6', ans)
     # 2) condition on a vector array
     create_and_test('a[i] = 1', 'b[i] > 6', ans, b=np.arange(
         12, dtype=np.int32).reshape((3, 4)))
-    # 3) condition on a vector temporary -- this is currently broken for the
-    # same reason as #1
-    create_and_test('a[i] = 1', 'c', ans, extra_insns='<> c = i < 6',
-                    exception=LoopyError)
+    # 3) condition on a vector temporary
+    create_and_test('a[i] = 1', 'c', ans, extra_insns='<> c = (i < 7) - 1')
     # 4) condition on an assigned vector array, this should work as assignment to a
     # vector can be safely unrolled
-    create_and_test('a[i] = 1', 'b[i] > 6', ans, b=np.zeros((3, 4), dtype=np.int32),
+    create_and_test('a[i] = 1', '(b[i] > 6)', ans,
+                    b=np.zeros((3, 4), dtype=np.int32),
                     extra_insns='b[i] = i')
     # 5) a block of simple assignments, this should be seemlessly translated to
     # multiple vector if statements
     c_ans = np.ones(12, dtype=np.int32)
     c_ans[7:] = 0
-    create_and_test('a[i] = 1\nc[i] = 0', 'b[i] > 6', (ans, c_ans), b=np.arange(
+    create_and_test('a[i] = 1\nc[i] = 0', '(b[i] > 6)', (ans, c_ans), b=np.arange(
         12, dtype=np.int32).reshape((3, 4)), c=np.ones((3, 4), dtype=np.int32))
     # 6) test a negated conditional
     ans_negated = np.invert(ans) + 2
@@ -3128,19 +3165,26 @@ def test_explicit_vector_dtype_conversion(ctx_factory, lhs_dtype, rhs_dtype):
                   """)
 
 
-def test_explicit_simd_vector_iname_in_conditional(ctx_factory):
+@pytest.mark.parametrize('dtype', [np.int32, np.int64, np.float32, np.float64])
+@pytest.mark.parametrize('vec_width', [2, 3, 4, 8, 16])
+def test_explicit_simd_vector_iname_in_conditional(ctx_factory, dtype, vec_width):
     ctx = ctx_factory()
 
-    def create_and_test(insn, answer, debug=False):
-        knl = lp.make_kernel(['{[i]: 0 <= i < 12}', '{[j]: 0 <= j < 1}'],
+    size = vec_width * 4
+
+    def create_and_test(insn, answer, shape=(1, size), debug=False,
+                        vectors=['a', 'b']):
+        num_conditions = shape[0]
+        knl = lp.make_kernel(['{{[i]: 0 <= i < {}}}'.format(size),
+                              '{{[j]: 0 <= j < {}}}'.format(num_conditions)],
                              insn,
-                             [lp.GlobalArg('a', shape=(1, 12,), dtype=np.int32),
-                              lp.GlobalArg('b', shape=(1, 12,), dtype=np.int32)])
+                             [lp.GlobalArg('a', shape=shape, dtype=dtype),
+                              lp.GlobalArg('b', shape=shape, dtype=dtype)])
 
         knl = lp.split_iname(knl, 'i', 4, inner_tag='vec')
         knl = lp.tag_inames(knl, [('j', 'g.0')])
         knl = lp.split_array_axis(knl, ['a', 'b'], 1, 4)
-        knl = lp.tag_array_axes(knl, ['a', 'b'], 'N1,N0,vec')
+        knl = lp.tag_array_axes(knl, vectors, 'N1,N0,vec')
 
         # ensure we can generate code
         code = lp.generate_code_v2(knl).device_code()
@@ -3148,19 +3192,34 @@ def test_explicit_simd_vector_iname_in_conditional(ctx_factory):
             print(code)
         # and check answer
         queue = cl.CommandQueue(ctx)
-        a = np.zeros((1, 3, 4), dtype=np.int32)
-        b = np.arange(12, dtype=np.int32).reshape((1, 3, 4))
+
+        num_vectors = int(shape[1] / 4)
+        a = np.zeros((num_conditions, num_vectors, 4), dtype=dtype)
+        b = np.arange(num_conditions * num_vectors * 4, dtype=dtype).reshape(
+            (num_conditions, num_vectors, 4))
         result = knl(queue, a=a, b=b)[1][0]
 
         assert np.array_equal(result.flatten('C'), answer)
 
-    ans = np.arange(12, dtype=np.int32)
+    ans = np.arange(size, dtype=np.int32)
     ans[:7] = 0
     create_and_test("""
         if i >= 7
             a[j, i] = b[j, i]
         end
     """, ans)
+
+    # a case that will result in a unvectorized evaluation
+    # this tests that we are properly able to unwind any vectorized conditional that
+    # has been applied, and then reapply the correct scalar conditional in
+    # unvectorize
+    ans = np.arange(12 * size, dtype=np.int32)
+    ans[:7] = 0
+    create_and_test("""
+        if j * 12 + i >= 7
+            a[j, i] = b[j, i]
+        end
+    """, ans, shape=(12, size), vectors=['b'])
 
 
 def test_vectorizability():

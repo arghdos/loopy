@@ -231,7 +231,8 @@ class CodeGenerationState(object):
             var_subst_map=None, vectorization_info=None,
             is_generating_device_code=None,
             gen_program_name=None,
-            schedule_index_end=None):
+            schedule_index_end=None,
+            removed_predicates=frozenset()):
 
         if kernel is None:
             kernel = self.kernel
@@ -261,7 +262,8 @@ class CodeGenerationState(object):
                 implemented_data_info=implemented_data_info,
                 implemented_domain=implemented_domain or self.implemented_domain,
                 implemented_predicates=(
-                    implemented_predicates or self.implemented_predicates),
+                    (implemented_predicates or self.implemented_predicates) -
+                    removed_predicates),
                 seen_dtypes=self.seen_dtypes,
                 seen_functions=self.seen_functions,
                 seen_atomic_dtypes=self.seen_atomic_dtypes,
@@ -321,7 +323,7 @@ class CodeGenerationState(object):
         return self.copy_and_assign(iname, expr).copy(
                 implemented_domain=new_impl_domain)
 
-    def try_vectorized(self, what, func):
+    def try_vectorized(self, what, func, vector_kwargs={}):
         """If *self* is in a vectorizing state (:attr:`vectorization_info` is
         not None), tries to call func (which must be a callable accepting a
         single :class:`CodeGenerationState` argument). If this fails with
@@ -336,7 +338,7 @@ class CodeGenerationState(object):
             return func(self)
 
         try:
-            return func(self)
+            return func(self, **vector_kwargs)
         except Unvectorizable as e:
             warn_with_kernel(self.kernel, "vectorize_failed",
                     "Vectorization of '%s' failed because '%s'"
@@ -347,7 +349,11 @@ class CodeGenerationState(object):
     def unvectorize(self, func):
         vinf = self.vectorization_info
         result = []
-        novec_self = self.copy(vectorization_info=False)
+        novec_self = self.copy(
+            vectorization_info=False,
+            # we must clear the implemented predicates, as they may have been
+            # generated as vector conditionals, and no longer be valide
+            removed_predicates=self.implemented_predicates)
 
         for i in range(vinf.length):
             idx_aff = isl.Aff.zero_on_domain(vinf.space.params()) + i

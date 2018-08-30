@@ -1323,10 +1323,12 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
         return [simplify_via_aff(arr[i]) for i in range(len(arr))]
 
     def is_contiguous(arr):
-        if not len(arr):
+        from loopy.isl_helpers import simplify_via_aff
+        from functools import cmp_to_key
+        if not len(arr) or len(arr) != vector_size:
             return False
-        sarr = sorted(arr)
-        return len(arr) == vector_size and (sarr[-1] - sarr[0] + 1) == vector_size
+        sarr = sorted(arr, key=cmp_to_key(lambda x, y: simplify_via_aff(x - y) > 0))
+        return simplify_via_aff(sarr[-1] - sarr[0] + 1) == vector_size
 
     def is_monotonic(arr):
         if not len(arr):

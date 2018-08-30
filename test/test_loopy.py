@@ -2869,6 +2869,44 @@ def test_explicit_simd_shuffles(ctx_factory):
                         answer, True)
 
 
+def test_explicit_simd_unr_iname(ctx_factory):
+    """
+    tests as scatter load to a specific lane of a vector array via an unrolled iname
+    """
+    ctx = ctx_factory()
+    queue = cl.CommandQueue(ctx)
+
+    insns = """
+        for j
+            for i
+                for lane
+                    a[j, i, lane] = b[j + lane, i]
+                end
+            end
+        end
+        """
+    dtype = np.int32
+    knl = lp.make_kernel(
+        ['{[j]: 0 <= j < 9}', '{[i]: 0 <= i < 3}', '{[lane]: 0 <= lane < 4}'],
+        insns,
+        [lp.GlobalArg('a', shape=(12, 3, 4), dtype=dtype),
+         lp.GlobalArg('b', shape=(12, 12), dtype=dtype)])
+
+    knl = lp.tag_array_axes(knl, 'a', 'N1,N0,vec')
+    knl = lp.tag_inames(knl, {'lane': 'unr'})
+    knl = lp.prioritize_loops(knl, 'j, i, lane')
+    knl = lp.preprocess_kernel(knl)
+
+    b = np.arange(144, dtype=dtype).reshape((12, 12))
+    a = knl(queue, b=b, a=np.zeros((12, 3, 4), dtype=dtype))[1][0]
+
+    ans = np.tile(np.arange(4, dtype=dtype), int(144 / 4)).reshape((12, 3, 4))
+    ans[:9] = (ans[:9] + np.arange(9)[:, np.newaxis, np.newaxis]) * 12
+    ans[:9] = (ans[:9] + np.arange(3)[np.newaxis, :, np.newaxis])
+    ans[9:] = 0
+    assert np.array_equal(a, ans)
+
+
 def test_explicit_simd_temporary_promotion(ctx_factory):
     from loopy.kernel.data import temp_var_scope as scopes
 

@@ -1327,7 +1327,12 @@ def get_access_info(target, ary, index, var_subst_map, vectorization_info):
         from functools import cmp_to_key
         if not len(arr) or len(arr) != vector_size:
             return False
-        sarr = sorted(arr, key=cmp_to_key(lambda x, y: simplify_via_aff(x - y) > 0))
+        try:
+            sarr = sorted(arr)
+        except TypeError:
+            # tried to sort a pymbolic expression, try w/ comparison sort
+            sarr = sorted(arr, key=cmp_to_key(
+                lambda x, y: simplify_via_aff(x - y) > 0))
         return simplify_via_aff(sarr[-1] - sarr[0] + 1) == vector_size
 
     def is_monotonic(arr):

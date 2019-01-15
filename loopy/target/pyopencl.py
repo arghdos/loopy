@@ -125,7 +125,8 @@ def adjust_local_temp_var_storage(kernel, device):
 
             new_storage_shape = storage_shape
 
-        new_temp_vars[temp_var.name] = temp_var.copy(storage_shape=new_storage_shape)
+        new_temp_vars[temp_var.name] = temp_var.copy(
+                storage_shape=tuple(new_storage_shape))
 
     return kernel.copy(temporary_variables=new_temp_vars)
 
@@ -409,6 +410,9 @@ class PyOpenCLTarget(OpenCLTarget):
     def get_kernel_executor(self, kernel, queue, **kwargs):
         from loopy.target.pyopencl_execution import PyOpenCLKernelExecutor
         return PyOpenCLKernelExecutor(queue.context, kernel)
+
+    def with_device(self, device):
+        return type(self)(device)
 
 # }}}
 
@@ -758,5 +762,20 @@ class PyOpenCLCASTBuilder(OpenCLCASTBuilder):
 
 # }}}
 
+
+# {{{ volatile mem acccess target
+
+class VolatileMemPyOpenCLCASTBuilder(PyOpenCLCASTBuilder):
+    def get_expression_to_c_expression_mapper(self, codegen_state):
+        from loopy.target.opencl import \
+                VolatileMemExpressionToOpenCLCExpressionMapper
+        return VolatileMemExpressionToOpenCLCExpressionMapper(codegen_state)
+
+
+class VolatileMemPyOpenCLTarget(PyOpenCLTarget):
+    def get_device_ast_builder(self):
+        return VolatileMemPyOpenCLCASTBuilder(self)
+
+# }}}
 
 # vim: foldmethod=marker

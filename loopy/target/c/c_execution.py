@@ -239,7 +239,8 @@ class CCompiler(object):
                     undefines=[],
                     source_suffix='c',
                     so_ext='.so',
-                    o_ext='.o')
+                    o_ext='.o',
+                    include_dirs=[])
 
         if toolchain is None:
             # copy in all differing values
